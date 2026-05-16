@@ -1,18 +1,25 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kas Desa - Sistem Keuangan Kantor</title>
     <meta name="description" content="Sistem manajemen keuangan kantor desa yang terintegrasi dengan Google Sheets.">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6366f1">
+
 </head>
+
 <body>
 
     <!-- LOADING -->
@@ -33,14 +40,20 @@
         <nav class="nav-menu">
             <div class="nav-section">MENU UTAMA</div>
             <ul class="nav-links">
-                <li class="nav-item"><a class="nav-link active" onclick="showPage('dashboard')" id="nav-dashboard"><i data-lucide="layout-grid"></i><span>Dashboard</span></a></li>
-                <li class="nav-item"><a class="nav-link" onclick="showPage('transaksi')" id="nav-transaksi"><i data-lucide="list-ordered"></i><span>Transaksi</span></a></li>
-                <li class="nav-item"><a class="nav-link" onclick="showPage('anggaran')" id="nav-anggaran"><i data-lucide="bar-chart-3"></i><span>Anggaran</span></a></li>
-                <li class="nav-item"><a class="nav-link" onclick="showPage('approval')" id="nav-approval"><i data-lucide="shield-check"></i><span>Approval</span><span id="badge-approval" class="badge-notif" style="display:none">0</span></a></li>
+                <li class="nav-item"><a class="nav-link active" onclick="showPage('dashboard')" id="nav-dashboard"><i
+                            data-lucide="layout-grid"></i><span>Dashboard</span></a></li>
+                <li class="nav-item"><a class="nav-link" onclick="showPage('transaksi')" id="nav-transaksi"><i
+                            data-lucide="list-ordered"></i><span>Transaksi</span></a></li>
+                <li class="nav-item"><a class="nav-link" onclick="showPage('anggaran')" id="nav-anggaran"><i
+                            data-lucide="bar-chart-3"></i><span>Silpa</span></a></li>
+                <li class="nav-item"><a class="nav-link" onclick="showPage('approval')" id="nav-approval"><i
+                            data-lucide="shield-check"></i><span>Approval</span><span id="badge-approval"
+                            class="badge-notif" style="display:none">0</span></a></li>
             </ul>
             <div class="nav-section">LAPORAN</div>
             <ul class="nav-links">
-                <li class="nav-item"><a class="nav-link" onclick="showPage('laporan')" id="nav-laporan"><i data-lucide="file-bar-chart"></i><span>Laporan Keuangan</span></a></li>
+                <li class="nav-item"><a class="nav-link" onclick="showPage('laporan')" id="nav-laporan"><i
+                            data-lucide="file-bar-chart"></i><span>Laporan Keuangan</span></a></li>
             </ul>
         </nav>
         <div class="sidebar-footer">
@@ -50,7 +63,8 @@
                     <div class="u-name" id="user-name">Admin</div>
                     <div class="u-role" id="conn-status">Mode Lokal</div>
                 </div>
-                <button class="btn-icon" onclick="openSettings()" title="Pengaturan"><i data-lucide="settings"></i></button>
+                <button class="btn-icon" onclick="openSettings()" title="Pengaturan"><i
+                        data-lucide="settings"></i></button>
             </div>
         </div>
     </aside>
@@ -61,13 +75,20 @@
             <div class="header-left">
                 <button class="mobile-toggle" onclick="toggleSidebar()"><i data-lucide="menu"></i></button>
                 <div id="env-badge" class="env-badge env-prod">Production</div>
-                <div class="search-bar"><i data-lucide="search"></i><input type="text" placeholder="Cari transaksi..." id="search-input" oninput="handleSearch(this.value)"></div>
+                <div class="search-bar"><i data-lucide="search"></i><input type="text" placeholder="Cari transaksi..."
+                        id="search-input" oninput="handleSearch(this.value)"></div>
             </div>
 
             <div class="header-right">
-                <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Ganti tema"><i data-lucide="moon"></i></button>
-                <button class="btn btn-primary" onclick="openModal('modal-transaksi')"><i data-lucide="plus"></i><span>Transaksi Baru</span></button>
+                <div id="sync-status" class="sync-status" style="display:none" title="Pending Sync">
+                    <i data-lucide="refresh-cw"></i><span id="sync-count">0</span>
+                </div>
+                <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Ganti tema"><i
+                        data-lucide="moon"></i></button>
+                <button class="btn btn-primary" onclick="openModal('modal-transaksi')"><i
+                        data-lucide="plus"></i><span>Transaksi Baru</span></button>
             </div>
+
         </header>
 
         <div class="content-body">
@@ -82,59 +103,201 @@
 
             <!-- DASHBOARD -->
             <div id="page-dashboard" class="page-content active">
-                <div class="page-header-title"><h2>Dashboard Keuangan</h2><p>Pantau anggaran dan pengeluaran kantor secara real-time.</p></div>
+                <div class="page-header-title">
+                    <h2>Dashboard Keuangan</h2>
+                    <p>Pantau anggaran dan pengeluaran kantor secara real-time.</p>
+                </div>
                 <div class="stats-grid">
-                    <div class="stat-card card-income"><div class="stat-card-inner"><div class="stat-icon income"><i data-lucide="trending-up"></i></div><div class="stat-data"><span class="stat-label">Total Pemasukan</span><div class="value" id="stat-income">Rp 0</div></div></div></div>
-                    <div class="stat-card card-expense"><div class="stat-card-inner"><div class="stat-icon expense"><i data-lucide="trending-down"></i></div><div class="stat-data"><span class="stat-label">Total Pengeluaran</span><div class="value" id="stat-expense">Rp 0</div></div></div></div>
-                    <div class="stat-card card-balance"><div class="stat-card-inner"><div class="stat-icon balance"><i data-lucide="wallet"></i></div><div class="stat-data"><span class="stat-label">Saldo Bersih</span><div class="value" id="stat-balance">Rp 0</div></div></div></div>
-                    <div class="stat-card card-pending"><div class="stat-card-inner"><div class="stat-icon pending"><i data-lucide="clock"></i></div><div class="stat-data"><span class="stat-label">Pending</span><div class="value" id="stat-pending">0</div></div></div></div>
+                    <div class="stat-card card-income">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon income"><i data-lucide="trending-up"></i></div>
+                            <div class="stat-data"><span class="stat-label">Total Pemasukan</span>
+                                <div class="value" id="stat-income">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card card-expense">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon expense"><i data-lucide="trending-down"></i></div>
+                            <div class="stat-data"><span class="stat-label">Total Pengeluaran</span>
+                                <div class="value" id="stat-expense">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card card-balance">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon balance"><i data-lucide="wallet"></i></div>
+                            <div class="stat-data"><span class="stat-label">Saldo Bersih</span>
+                                <div class="value" id="stat-balance">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card card-pending">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon pending"><i data-lucide="clock"></i></div>
+                            <div class="stat-data"><span class="stat-label">Pending</span>
+                                <div class="value" id="stat-pending">0</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="dashboard-main-grid">
                     <div class="grid-left">
-                        <div class="chart-container card"><div class="card-header"><h3>Arus Kas 7 Hari</h3></div><div style="height:240px"><canvas id="cashflowChart"></canvas></div></div>
+                        <div class="chart-container card">
+                            <div class="card-header">
+                                <h3>Arus Kas 7 Hari</h3>
+                            </div>
+                            <div style="height:240px"><canvas id="cashflowChart"></canvas></div>
+                        </div>
                         <div class="recent-list card">
-                            <div class="card-header"><h3>Transaksi Terbaru</h3><button class="btn-text" onclick="showPage('transaksi')">Lihat Semua →</button></div>
-                            <div class="table-responsive"><table><thead><tr><th>TANGGAL</th><th>SUMBER</th><th>DESKRIPSI</th><th>JUMLAH</th><th>STATUS</th></tr></thead><tbody id="recent-transactions-list"></tbody></table></div>
+                            <div class="card-header">
+                                <h3>Transaksi Terbaru</h3><button class="btn-text" onclick="showPage('transaksi')">Lihat
+                                    Semua →</button>
+                            </div>
+                            <div class="table-responsive">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>TANGGAL</th>
+                                            <th>SUMBER DANA</th>
+
+
+                                            <th>DESKRIPSI</th>
+                                            <th>JUMLAH</th>
+                                            <th>STATUS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recent-transactions-list"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                     <div class="grid-right">
-                        <div class="allocation-card card"><div class="card-header"><h3>Alokasi Pengeluaran</h3></div><canvas id="categoryChart"></canvas></div>
-                        <div class="quick-stats card"><div class="card-header"><h3>Antrian Approval</h3></div><div id="mini-approval-list" class="mini-list"><div class="empty-state" style="padding:1.25rem 0"><p>Tidak ada antrian</p></div></div></div>
+                        <div class="allocation-card card">
+                            <div class="card-header">
+                                <h3>Alokasi Pengeluaran</h3>
+                            </div><canvas id="categoryChart"></canvas>
+                        </div>
+                        <div class="quick-stats card">
+                            <div class="card-header">
+                                <h3>Antrian Approval</h3>
+                            </div>
+                            <div id="mini-approval-list" class="mini-list">
+                                <div class="empty-state" style="padding:1.25rem 0">
+                                    <p>Tidak ada antrian</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- TRANSAKSI -->
             <div id="page-transaksi" class="page-content" style="display:none">
-                <div class="page-header-title"><h2>Riwayat Transaksi</h2><p>Seluruh catatan pemasukan dan pengeluaran kantor.</p></div>
+                <div class="page-header-title">
+                    <h2>Riwayat Transaksi</h2>
+                    <p>Seluruh catatan pemasukan dan pengeluaran kantor.</p>
+                </div>
                 <div class="card">
-                    <div class="card-header"><h3>Daftar Transaksi</h3><button class="btn btn-primary" onclick="openModal('modal-transaksi')"><i data-lucide="plus" style="width:13px;height:13px"></i> Tambah</button></div>
-                    <div class="table-responsive"><table><thead><tr><th>ID</th><th>TANGGAL</th><th>TIPE</th><th>SUMBER</th><th>DESKRIPSI</th><th>JUMLAH</th><th>STATUS</th><th>AKSI</th></tr></thead><tbody id="full-transactions-list"></tbody></table></div>
+                    <div class="card-header">
+                        <h3>Daftar Transaksi</h3><button class="btn btn-primary"
+                            onclick="openModal('modal-transaksi')"><i data-lucide="plus"
+                                style="width:13px;height:13px"></i> Tambah</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>TANGGAL</th>
+                                    <th>TIPE</th>
+                                    <th>SUMBER DANA</th>
+
+
+                                    <th>DESKRIPSI</th>
+                                    <th>JUMLAH</th>
+                                    <th>STATUS</th>
+                                    <th>AKSI</th>
+                                </tr>
+                            </thead>
+                            <tbody id="full-transactions-list"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <!-- ANGGARAN -->
             <div id="page-anggaran" class="page-content" style="display:none">
-                <div class="page-header-title"><h2>Manajemen Anggaran</h2><p>Pantau pagu dan realisasi setiap sumber dana.</p></div>
+                <div class="page-header-title">
+                    <h2>Manajemen Anggaran</h2>
+                    <p>Pantau pagu dan realisasi setiap Silpa.</p>
+
+                </div>
                 <div id="budget-list" class="budget-grid"></div>
             </div>
 
             <!-- APPROVAL -->
             <div id="page-approval" class="page-content" style="display:none">
-                <div class="page-header-title"><h2>Persetujuan Transaksi</h2><p>Transaksi di atas batas nominal memerlukan persetujuan.</p></div>
-                <div class="card"><div id="approval-list" class="approval-container"></div></div>
+                <div class="page-header-title">
+                    <h2>Persetujuan Transaksi</h2>
+                    <p>Transaksi di atas batas nominal memerlukan persetujuan.</p>
+                </div>
+                <div class="card">
+                    <div id="approval-list" class="approval-container"></div>
+                </div>
             </div>
 
             <!-- LAPORAN -->
             <div id="page-laporan" class="page-content" style="display:none">
-                <div class="page-header-title"><h2>Laporan Keuangan</h2><p>Ringkasan keuangan per sumber dana.</p></div>
-                <div class="report-summary-grid">
-                    <div class="card"><div style="text-align:center;padding:0.4rem 0"><div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">TOTAL PEMASUKAN</div><div id="rep-income" style="font-size:1.4rem;font-weight:800;color:var(--success)">Rp 0</div></div></div>
-                    <div class="card"><div style="text-align:center;padding:0.4rem 0"><div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">TOTAL PENGELUARAN</div><div id="rep-expense" style="font-size:1.4rem;font-weight:800;color:var(--danger)">Rp 0</div></div></div>
-                    <div class="card"><div style="text-align:center;padding:0.4rem 0"><div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">SALDO AKHIR</div><div id="rep-balance" style="font-size:1.4rem;font-weight:800;color:var(--primary)">Rp 0</div></div></div>
+                <div class="page-header-title">
+                    <h2>Laporan Keuangan</h2>
+                    <p>Ringkasan keuangan per Silpa.</p>
+
                 </div>
-                <div class="card"><div class="card-header"><h3>Performa per Sumber Dana</h3></div>
-                    <div class="table-responsive"><table><thead><tr><th>SUMBER DANA</th><th>SALDO AWAL</th><th>PEMASUKAN</th><th>PENGELUARAN</th><th>SALDO AKHIR</th></tr></thead><tbody id="report-category-list"></tbody></table></div>
+                <div class="report-summary-grid">
+                    <div class="card">
+                        <div style="text-align:center;padding:0.4rem 0">
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
+                                TOTAL PEMASUKAN</div>
+                            <div id="rep-income" style="font-size:1.4rem;font-weight:800;color:var(--success)">Rp 0
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div style="text-align:center;padding:0.4rem 0">
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
+                                TOTAL PENGELUARAN</div>
+                            <div id="rep-expense" style="font-size:1.4rem;font-weight:800;color:var(--danger)">Rp 0
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div style="text-align:center;padding:0.4rem 0">
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
+                                SALDO AKHIR</div>
+                            <div id="rep-balance" style="font-size:1.4rem;font-weight:800;color:var(--primary)">Rp 0
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Performa per Sumber Dana</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>SUMBER DANA</th>
+                                    <th>SALDO AWAL</th>
+                                    <th>PEMASUKAN</th>
+                                    <th>PENGELUARAN</th>
+                                    <th>SALDO AKHIR</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-category-list"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -143,29 +306,44 @@
     <!-- MODAL TRANSAKSI -->
     <div id="modal-transaksi" class="modal-overlay">
         <div class="modal">
-            <div class="modal-header"><h2>Transaksi Baru</h2><button class="close-btn" onclick="closeModal('modal-transaksi')">&times;</button></div>
+            <div class="modal-header">
+                <h2>Transaksi Baru</h2><button class="close-btn"
+                    onclick="closeModal('modal-transaksi')">&times;</button>
+            </div>
             <div class="modal-body">
                 <div class="form-row">
-                    <div class="form-group"><label>Tipe</label><select id="trx-type" onchange="populateDropdowns()"><option value="pengeluaran">Pengeluaran</option><option value="pemasukan">Pemasukan</option></select></div>
+                    <div class="form-group"><label>Tipe</label><select id="trx-type" onchange="populateDropdowns()">
+                            <option value="pengeluaran">Pengeluaran</option>
+                            <option value="pemasukan">Pemasukan</option>
+                        </select></div>
                     <div class="form-group"><label>Tanggal</label><input type="date" id="trx-date"></div>
                 </div>
-                <div class="form-row">
-                    <div class="form-group"><label>Sumber Dana</label><select id="trx-category"></select></div>
-                    <div class="form-group"><label>Kategori</label><select id="trx-subcategory"></select></div>
+                <div class="form-group"><label>Sumber Dana</label><select id="trx-category"></select></div>
+
+                <div class="form-group"><label>Jumlah (Rp)</label>
+                    <div class="input-prefix"><span>Rp</span><input type="number" id="trx-amount" placeholder="0.00"
+                            step="0.01"></div>
+
                 </div>
-                <div class="form-group"><label>Jumlah (Rp)</label><div class="input-prefix"><span>Rp</span><input type="number" id="trx-amount" placeholder="0"></div></div>
-                <div class="form-group"><label>Metode Pembayaran</label><select id="trx-paymethod"><option value="Transfer">Transfer Bank</option><option value="Tunai">Tunai</option><option value="Cek/Giro">Cek/Giro</option></select></div>
-                <div class="form-group"><label>Deskripsi</label><textarea id="trx-desc" placeholder="Keterangan transaksi..."></textarea></div>
-                <div class="form-group"><label>Catatan (opsional)</label><input type="text" id="trx-notes" placeholder="Catatan..."></div>
+
+                <div class="form-group"><label>Deskripsi</label><textarea id="trx-desc"
+                        placeholder="Keterangan transaksi..."></textarea></div>
+                <div class="form-group"><label>Catatan (opsional)</label><input type="text" id="trx-notes"
+                        placeholder="Catatan..."></div>
             </div>
-            <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('modal-transaksi')">Batal</button><button class="btn btn-primary" onclick="saveTransaction()">Simpan</button></div>
+            <div class="modal-footer"><button class="btn btn-outline"
+                    onclick="closeModal('modal-transaksi')">Batal</button><button class="btn btn-primary"
+                    onclick="saveTransaction()">Simpan</button></div>
         </div>
     </div>
 
     <!-- MODAL SETTINGS -->
     <div id="modal-settings" class="modal-overlay">
         <div class="modal large">
-            <div class="modal-header"><h2>Pengaturan Sistem</h2><button class="close-btn" onclick="closeModal('modal-settings')">&times;</button></div>
+            <div class="modal-header">
+                <h2>Pengaturan Sistem</h2><button class="close-btn"
+                    onclick="closeModal('modal-settings')">&times;</button>
+            </div>
             <div class="modal-body">
                 <div class="settings-section">
                     <h3><i data-lucide="link" style="width:16px;height:16px"></i> Koneksi Google Apps Script</h3>
@@ -194,55 +372,90 @@
                 </div>
 
                 <div class="settings-section">
-                    <h3><i data-lucide="database" style="width:16px;height:16px"></i> Sumber Dana</h3>
+                    <h3><i data-lucide="database" style="width:16px;height:16px"></i> Master Silpa</h3>
                     <div class="add-source-form">
-                        <select id="set-source-type" style="flex:0.3;padding:0.45rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.8rem">
-                            <option value="DD">DD</option>
-                            <option value="ADD">ADD</option>
-                            <option value="PAD">PAD</option>
-                            <option value="DLL">DLL</option>
+                        <select id="set-source-type"
+                            style="flex:0.3;padding:0.45rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.8rem">
                         </select>
+
                         <input type="text" id="set-source-name" placeholder="Rincian (misal: Tahap 1)" style="flex:1">
-                        <input type="number" id="set-source-init" placeholder="Saldo" style="width:100px">
+                        <input type="number" id="set-source-init" placeholder="Saldo" style="width:100px" step="0.01">
+
                         <button class="btn btn-primary btn-sm" onclick="addSource()">Tambah</button>
                     </div>
-                    <div class="table-responsive"><table class="settings-table"><thead><tr><th>TIPE</th><th>NAMA</th><th>SALDO</th><th>AKSI</th></tr></thead><tbody id="settings-source-list"></tbody></table></div>
+                    <div class="table-responsive">
+                        <table class="settings-table">
+                            <thead>
+                                <tr>
+                                    <th>SUMBER DANA</th>
+
+                                    <th>NAMA</th>
+                                    <th>SALDO</th>
+                                    <th>AKSI</th>
+                                </tr>
+                            </thead>
+                            <tbody id="settings-source-list"></tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="settings-section">
-                    <h3><i data-lucide="tag" style="width:16px;height:16px"></i> Kategori Transaksi</h3>
-                    <div class="add-source-form"><input type="text" id="set-cat-name" placeholder="Nama Kategori"><select id="set-cat-type" style="flex:0.5;padding:0.45rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.8rem"><option value="pengeluaran">Pengeluaran</option><option value="pemasukan">Pemasukan</option></select><button class="btn btn-primary btn-sm" onclick="addCategory()">Tambah</button></div>
-                    <div class="table-responsive"><table class="settings-table"><thead><tr><th>KATEGORI</th><th>TIPE</th><th>AKSI</th></tr></thead><tbody id="settings-cat-list"></tbody></table></div>
+
+                <!-- Zona Berbahaya -->
+                <div class="settings-section"
+                    style="border-top:2px solid #fee2e2; padding-top:1.5rem; margin-top:2rem;">
+                    <h3 style="color:#dc2626"><i data-lucide="alert-triangle"
+                            style="width:16px;height:16px; vertical-align:middle; margin-right:4px;"></i> Zona Berbahaya
+                    </h3>
+                    <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:1rem;">Tindakan ini akan
+                        menghapus seluruh data transaksi dan silpa secara permanen dari
+                        spreadsheet.<br><b>Hanya diperbolehkan di mode Development (DEV).</b></p>
+
+                    <button class="btn btn-danger btn-sm" onclick="handleResetDatabase()"
+                        style="background:#dc2626; border-color:#dc2626;">Reset Seluruh Database</button>
                 </div>
+
             </div>
         </div>
     </div>
 
-    <!-- MODAL EDIT SUMBER DANA -->
+    <!-- MODAL EDIT SILPA -->
     <div id="modal-edit-source" class="modal-overlay">
         <div class="modal">
-            <div class="modal-header"><h2>Edit Sumber Dana</h2><button class="close-btn" onclick="closeModal('modal-edit-source')">&times;</button></div>
+            <div class="modal-header">
+                <h2>Edit Silpa</h2><button class="close-btn" onclick="closeModal('modal-edit-source')">&times;</button>
+            </div>
             <div class="modal-body">
                 <input type="hidden" id="edit-source-old-type">
                 <input type="hidden" id="edit-source-old-name">
                 <div class="form-row">
-                    <div class="form-group"><label>Tipe</label>
+                    <div class="form-group"><label>Sumber Dana</label>
                         <select id="edit-source-type">
-                            <option value="DD">DD</option>
-                            <option value="ADD">ADD</option>
-                            <option value="PAD">PAD</option>
-                            <option value="DLL">DLL</option>
                         </select>
+
                     </div>
                     <div class="form-group"><label>Nama Rincian</label><input type="text" id="edit-source-name"></div>
                 </div>
-                <div class="form-group"><label>Saldo Awal (Rp)</label><div class="input-prefix"><span>Rp</span><input type="number" id="edit-source-init"></div></div>
+                <div class="form-group"><label>Saldo Awal (Rp)</label>
+                    <div class="input-prefix"><span>Rp</span><input type="number" id="edit-source-init" step="0.01">
+                    </div>
+
+                </div>
                 <div class="form-group"><label>Keterangan</label><textarea id="edit-source-desc"></textarea></div>
             </div>
-            <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('modal-edit-source')">Batal</button><button class="btn btn-primary" onclick="saveEditedSource()">Update</button></div>
+            <div class="modal-footer"><button class="btn btn-outline"
+                    onclick="closeModal('modal-edit-source')">Batal</button><button class="btn btn-primary"
+                    onclick="saveEditedSource()">Update</button></div>
         </div>
     </div>
 
     <script src="app.js"></script>
-    <script>lucide.createIcons();</script>
+    <script>
+        lucide.createIcons();
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').then(reg => console.log('SW Registered')).catch(err => console.log('SW Fail', err));
+            });
+        }
+    </script>
 </body>
+
 </html>

@@ -1,0 +1,16 @@
+{
+  "name": "Kas Desa Financial Dashboard",
+  "short_name": "KasDesa",
+  "description": "Sistem Manajemen Keuangan Kantor Desa Patihan",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

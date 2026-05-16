@@ -15,8 +15,8 @@ const CONFIG = {
 
 const ENVIRONMENTS = {
   PROD: { name: 'Production', spreadsheetId: '' }, // Isi dengan ID Spreadsheet Utama
-  STAGING: { name: 'Staging', spreadsheetId: '' }, // Isi dengan ID Spreadsheet Testing
-  DEV: { name: 'Development', spreadsheetId: '' }  // Isi dengan ID Spreadsheet Dev
+  STAGING: { name: 'Staging', spreadsheetId: '1M-0ryJx6tzF4oSGatZ5EOqiyFs55icOErN-GmGsvB6o' }, // Isi dengan ID Spreadsheet Testing
+  DEV: { name: 'Development', spreadsheetId: '13dQr5IKAhCQ9DBE78ZiRJqIhfC9GnPq_ini3lMdfQp4' }  // Isi dengan ID Spreadsheet Dev
 };
 
 
@@ -69,6 +69,7 @@ function doPost(e) {
       case 'saveKategori': result = saveKategori(body.name, body.type, body.description); break;
       case 'deleteKategori': result = deleteKategori(body.name); break;
       case 'updateSettings': result = updateSettings(body.key, body.value); break;
+      case 'resetDatabase': result = resetDatabase(); break;
       default: result = { error: 'Unknown action: ' + action };
     }
   } catch (err) {
@@ -115,10 +116,13 @@ function initDatabase() {
   const ss = getSpreadsheet_();
   const schemas = [
     { name: 'Transaksi', headers: ['ID','Tanggal','Tipe','Sumber Dana','Kategori','Deskripsi','Jumlah','Metode Bayar','Status','Catatan','User','Timestamp'] },
-    { name: 'Anggaran', headers: ['Tipe','Nama','Pagu Anggaran','Terpakai','Sisa','Periode'] },
-    { name: 'Master_SumberDana', headers: ['Tipe','Nama','Saldo Awal','Keterangan','Status Aktif'] },
-    { name: 'Master_Kategori', headers: ['Nama Kategori','Tipe','Keterangan'] },
+
+    { name: 'Silpa', headers: ['Sumber Dana','Nama','Saldo Awal','Keterangan','Status Aktif'] },
+
+
     { name: 'Settings', headers: ['Key','Value'] },
+    { name: 'Referensi', headers: ['Sumber Dana'] },
+
     { name: 'Log_Aktivitas', headers: ['Timestamp','User','Aksi','Detail'] }
   ];
   schemas.forEach(s => {
@@ -129,18 +133,8 @@ function initDatabase() {
       sheet.setFrozenRows(1);
     }
   });
-  // Default sumber dana
-  const srcSheet = ss.getSheetByName('Master_SumberDana');
-  if (srcSheet.getLastRow() <= 1) {
-    srcSheet.appendRow(['DD','Dana Desa Tahap 1',100000000,'Dana transfer pusat','Aktif']);
-    srcSheet.appendRow(['ADD','Alokasi Dana Desa Tahap 1',50000000,'Dana transfer daerah','Aktif']);
-    srcSheet.appendRow(['PAD','Pendapatan Asli Desa',25000000,'Pendapatan asli desa','Aktif']);
-  }
-  // Default kategori
-  const catSheet = ss.getSheetByName('Master_Kategori');
-  if (catSheet.getLastRow() <= 1) {
-    [['Belanja Pegawai','pengeluaran','Gaji dan tunjangan'],['Belanja Barang & Jasa','pengeluaran','ATK, konsumsi'],['Belanja Modal','pengeluaran','Aset tetap'],['Belanja Operasional','pengeluaran','Biaya operasional'],['Penerimaan Transfer','pemasukan','Transfer pemerintah'],['Penerimaan Retribusi','pemasukan','Retribusi daerah'],['Penerimaan Lainnya','pemasukan','Pendapatan lain']].forEach(c => catSheet.appendRow(c));
-  }
+
+
   // Default settings
   const setSheet = ss.getSheetByName('Settings');
   if (setSheet.getLastRow() <= 1) {
@@ -148,45 +142,82 @@ function initDatabase() {
     setSheet.appendRow(['tahun_anggaran',CONFIG.TAHUN_ANGGARAN]);
     setSheet.appendRow(['nama_kantor',CONFIG.NAMA_KANTOR]);
   }
+  // Default Referensi
+  const refSheet = ss.getSheetByName('Referensi');
+  if (refSheet.getLastRow() <= 1) {
+    ['DD Earmark','DD NonEarmark','ADD Siltap','ADD Operasional','PAD','DLL','BHPR'].forEach(t => refSheet.appendRow([t]));
+  }
+
+  // Tambah validasi data: kolom Sumber Dana di sheet Silpa harus dari sheet Referensi
+  const silpaSheet = ss.getSheetByName('Silpa');
+  if (silpaSheet) {
+    const refRange = refSheet.getRange(2, 1, Math.max(refSheet.getLastRow() - 1, 7), 1);
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(refRange, true)
+      .setAllowInvalid(false)
+      .setHelpText('Pilih Sumber Dana dari daftar Referensi')
+      .build();
+    silpaSheet.getRange(2, 1, 1000, 1).setDataValidation(rule);
+  }
+
+
   return { success: true, message: 'Database berhasil diinisialisasi!' };
 }
 
 // ─── DATA RETRIEVAL ────────────────────────────────────────────
 function getAllData() {
   const ss = getSpreadsheet_();
+  
   const trxSheet = ss.getSheetByName('Transaksi');
-  const lastRow = trxSheet.getLastRow();
-  let trxData = [];
-  if (lastRow > 1) trxData = trxSheet.getRange(2,1,lastRow-1,12).getValues();
-  const transactions = trxData.map(r => ({
-    id:r[0], date: r[1] instanceof Date ? Utilities.formatDate(r[1],CONFIG.TIMEZONE,"yyyy-MM-dd") : r[1],
-    type:r[2], category:r[3], subCategory:r[4], desc:r[5], amount:r[6], payMethod:r[7], status:r[8], notes:r[9], user:r[10], timestamp:r[11]
-  })).reverse();
+  let transactions = [];
+  if (trxSheet) {
+    const lastRow = trxSheet.getLastRow();
+    let trxData = [];
+    if (lastRow > 1) trxData = trxSheet.getRange(2,1,lastRow-1,12).getValues();
+    transactions = trxData.map(r => ({
+      id:r[0], date: r[1] instanceof Date ? Utilities.formatDate(r[1],CONFIG.TIMEZONE,"yyyy-MM-dd") : r[1],
+      type:r[2], category:r[3], subCategory:r[4], desc:r[5], amount:r[6], payMethod:r[7], status:r[8], notes:r[9], user:r[10], timestamp:r[11]
+    })).reverse();
+  }
 
-  const srcSheet = ss.getSheetByName('Master_SumberDana');
-  const srcData = srcSheet.getLastRow()>1 ? srcSheet.getRange(2,1,srcSheet.getLastRow()-1,5).getValues() : [];
-  const sources = srcData.map(r => ({ type:r[0], name:r[1], initialBalance:r[2], description:r[3], active:r[4] }));
+  const srcSheet = ss.getSheetByName('Silpa');
+  let sources = [];
+  if (srcSheet) {
+    const srcData = srcSheet.getLastRow()>1 ? srcSheet.getRange(2,1,srcSheet.getLastRow()-1,5).getValues() : [];
+    sources = srcData.map(r => ({ type:r[0], name:r[1], initialBalance:r[2], description:r[3], active:r[4] }));
+  }
 
-  const catSheet = ss.getSheetByName('Master_Kategori');
-  const catData = catSheet.getLastRow()>1 ? catSheet.getRange(2,1,catSheet.getLastRow()-1,3).getValues() : [];
-  const categories = catData.map(r => ({ name:r[0], type:r[1], description:r[2] }));
+
 
   const setSheet = ss.getSheetByName('Settings');
-  const setData = setSheet.getLastRow()>1 ? setSheet.getRange(2,1,setSheet.getLastRow()-1,2).getValues() : [];
-  const settings = {}; setData.forEach(r => settings[r[0]] = r[1]);
+  let settings = {};
+  if (setSheet) {
+    const setData = setSheet.getLastRow()>1 ? setSheet.getRange(2,1,setSheet.getLastRow()-1,2).getValues() : [];
+    setData.forEach(r => settings[r[0]] = r[1]);
+  }
+
+  const refSheet = ss.getSheetByName('Referensi');
+  let references = [];
+  if (refSheet) {
+    references = refSheet.getLastRow()>1 ? refSheet.getRange(2,1,refSheet.getLastRow()-1,1).getValues().flat() : [];
+  }
 
   return { 
     transactions, 
     sources, 
-    categories, 
-    settings, 
+    settings,
+    references,
+
     config: CONFIG,
+
     env: {
       active: getActiveEnv_(),
       name: ENVIRONMENTS[getActiveEnv_()]?.name || 'Default'
-    }
+    },
+    dbStatus: (trxSheet && srcSheet && catSheet && setSheet) ? 'ready' : 'needs_init'
   };
 }
+
 
 
 // ─── TRANSACTION CRUD ──────────────────────────────────────────
@@ -196,7 +227,8 @@ function saveTransactionToSheet(data) {
   const id = 'TRX-' + Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyyMMddHHmmss") + '-' + Math.floor(Math.random()*1000);
   const status = (data.type === 'pengeluaran' && data.amount >= CONFIG.BATAS_APPROVAL) ? 'pending' : 'approved';
   sheet.appendRow([id, data.date, data.type, data.category, data.subCategory||'', data.desc, data.amount, data.payMethod||'Transfer', status, data.notes||'', data.user||'web', new Date()]);
-  _logActivity(data.user||'web', 'CREATE', 'Transaksi baru: '+id);
+  _logActivity(data.user||'web', 'CREATE', 'Silpa baru: '+id);
+
   return { success:true, id, status };
 }
 
@@ -230,7 +262,8 @@ function updateApprovalStatus(id, status) {
 
 // ─── MASTER DATA CRUD ─────────────────────────────────────────
 function saveSumberDana(type, name, initialBalance, description) {
-  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Master_SumberDana'); const data = sheet.getDataRange().getValues();
+  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Silpa'); const data = sheet.getDataRange().getValues();
+
   // Check if same type and name exists
   for (let i=1;i<data.length;i++) { 
     if(data[i][0]===type && data[i][1]===name) { 
@@ -243,13 +276,15 @@ function saveSumberDana(type, name, initialBalance, description) {
   return { success:true, mode:'created' };
 }
 function deleteSumberDana(type, name) {
-  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Master_SumberDana'); const data = sheet.getDataRange().getValues();
+  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Silpa'); const data = sheet.getDataRange().getValues();
+
   for (let i=1;i<data.length;i++) { if(data[i][0]===type && data[i][1]===name) { sheet.deleteRow(i+1); return { success:true }; } }
   return { success:false };
 }
 function editSumberDana(oldType, oldName, newType, newName, newBalance, newDescription) {
   const ss = getSpreadsheet_();
-  const sheet = ss.getSheetByName('Master_SumberDana');
+  const sheet = ss.getSheetByName('Silpa');
+
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === oldType && data[i][1] === oldName) {
@@ -276,22 +311,15 @@ function _cascadeUpdateSource(oldLabel, newLabel) {
   const sheet = ss.getSheetByName('Transaksi');
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][3] === oldLabel) { // Kolom Sumber Dana adalah index 3 (D)
+    if (data[i][3] === oldLabel) { // Kolom Silpa adalah index 3 (D)
+
       sheet.getRange(i + 1, 4).setValue(newLabel);
     }
   }
 }
-function saveKategori(name, type, description) {
-  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Master_Kategori'); const data = sheet.getDataRange().getValues();
-  for (let i=1;i<data.length;i++) { if(data[i][0]===name) { sheet.getRange(i+1,2).setValue(type); return { success:true, mode:'updated' }; } }
-  sheet.appendRow([name, type, description||'']);
-  return { success:true, mode:'created' };
-}
-function deleteKategori(name) {
-  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Master_Kategori'); const data = sheet.getDataRange().getValues();
-  for (let i=1;i<data.length;i++) { if(data[i][0]===name) { sheet.deleteRow(i+1); return { success:true }; } }
-  return { success:false };
-}
+function saveKategori(name, type, description) { return { success: false }; }
+function deleteKategori(name) { return { success: false }; }
+
 function updateSettings(key, value) {
   const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Settings'); const data = sheet.getDataRange().getValues();
   for (let i=1;i<data.length;i++) { if(data[i][0]===key) { sheet.getRange(i+1,2).setValue(value); return { success:true }; } }
@@ -311,4 +339,22 @@ function getMonthlyReport(month, year) {
 // ─── HELPERS ───────────────────────────────────────────────────
 function _logActivity(user, action, detail) {
   try { const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Log_Aktivitas'); if(sheet) sheet.appendRow([new Date(), user, action, detail]); } catch(e) {}
+}
+function resetDatabase() {
+  const ss = getSpreadsheet_();
+  const sheetsToClear = ['Transaksi', 'Silpa', 'Log_Aktivitas'];
+
+  
+  sheetsToClear.forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) {
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        sheet.deleteRows(2, lastRow - 1);
+      }
+    }
+  });
+  
+  _logActivity('system', 'RESET', 'Database direset ke kondisi awal');
+  return { success: true, message: 'Database berhasil dikosongkan!' };
 }

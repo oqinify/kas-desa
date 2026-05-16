@@ -3,7 +3,12 @@
 // ═══════════════════════════════════════════════════════════════
 
 const GAS_URL_KEY = 'kas_desa_gas_url';
+const STATE_CACHE_KEY = 'kas_desa_state_cache';
+const SYNC_QUEUE_KEY = 'kas_desa_sync_queue';
+
 let gasUrl = localStorage.getItem(GAS_URL_KEY) || '';
+let syncQueue = JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]');
+
 let cashflowChart, categoryChart;
 
 let state = {
@@ -30,6 +35,15 @@ let state = {
   env: { active: 'PROD', name: 'Production' }
 };
 
+// Load cached state if exists (based on last environment)
+const lastEnv = localStorage.getItem('kas_desa_last_env') || 'PROD';
+const cachedState = localStorage.getItem(STATE_CACHE_KEY + '_' + lastEnv);
+if (cachedState) {
+  state = JSON.parse(cachedState);
+}
+
+
+
 
 // ─── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -45,7 +59,23 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('setup-banner').style.display = 'flex';
     updateUI();
   }
+  
+  window.addEventListener('online', handleConnectivityChange);
+  window.addEventListener('offline', handleConnectivityChange);
+  updateSyncBadge();
 });
+
+function handleConnectivityChange() {
+  const isOnline = navigator.onLine;
+  document.getElementById('conn-status').textContent = isOnline ? 'Online' : 'Offline';
+  if (isOnline) {
+    showToast('Koneksi kembali! Menyingkronkan data...','success');
+    syncOfflineActions();
+  } else {
+    showToast('Anda sedang offline. Perubahan akan disimpan secara lokal.','info');
+  }
+}
+
 
 // ─── GAS API ───────────────────────────────────────────────────
 async function fetchFromGAS() {
@@ -57,29 +87,98 @@ async function fetchFromGAS() {
     if (d.error) throw new Error(d.error);
     state.transactions = d.transactions || [];
     state.sources = d.sources || [];
-    state.categories = d.categories || [];
+
     state.settings = d.settings || {};
     state.config = d.config || state.config;
     state.env = d.env || state.env;
+    state.references = d.references || [];
+
+    const envCacheKey = STATE_CACHE_KEY + '_' + state.env.active;
+    localStorage.setItem(envCacheKey, JSON.stringify(state));
+    localStorage.setItem('kas_desa_last_env', state.env.active);
 
     document.getElementById('conn-status').textContent = 'Online';
     document.getElementById('setup-banner').style.display = 'none';
-    showToast('Data berhasil dimuat dari server!','success');
+    
+    if (d.dbStatus === 'needs_init') {
+      showToast('Struktur database (Silpa) belum siap. Harap klik "Tes Koneksi" di Pengaturan untuk inisialisasi.', 'warning');
+    } else {
+      showToast('Data berhasil dimuat dari server!','success');
+    }
+
   } catch(e) {
-    document.getElementById('conn-status').textContent = 'Mode Lokal';
-    showToast('Gagal terhubung: ' + e.message,'error');
+    document.getElementById('conn-status').textContent = 'Offline';
+    showToast('Gagal terhubung (Mode Offline aktif): ' + e.message,'error');
   }
+
+
   showLoading(false);
   updateUI();
 }
 
 async function postToGAS(body) {
   if (!gasUrl) return null;
+  
+  if (!navigator.onLine) {
+    queueOfflineAction(body);
+    return { success: true, status: 'offline', offline: true };
+  }
+
   try {
     const r = await fetch(gasUrl, { method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'text/plain'} });
     return await r.json();
-  } catch(e) { showToast('Gagal kirim data: '+e.message,'error'); return null; }
+  } catch(e) { 
+    queueOfflineAction(body);
+    return { success: true, status: 'offline', offline: true }; 
+  }
 }
+
+function queueOfflineAction(body) {
+  syncQueue.push({ id: Date.now(), body, timestamp: new Date() });
+  localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(syncQueue));
+  updateSyncBadge();
+  showToast('Tersimpan offline! Akan disinkronkan saat online.','info');
+}
+
+async function syncOfflineActions() {
+  if (syncQueue.length === 0) return;
+  
+  showLoading(true);
+  let successCount = 0;
+  const newQueue = [];
+  
+  for (const item of syncQueue) {
+    try {
+      const r = await fetch(gasUrl, { method:'POST', body:JSON.stringify(item.body), headers:{'Content-Type':'text/plain'} });
+      const res = await r.json();
+      if (res.success) successCount++;
+      else newQueue.push(item);
+    } catch(e) {
+      newQueue.push(item);
+    }
+  }
+  
+  syncQueue = newQueue;
+  localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(syncQueue));
+  updateSyncBadge();
+  showLoading(false);
+  
+  if (successCount > 0) {
+    showToast(`${successCount} data berhasil disinkronkan!`,'success');
+    fetchFromGAS();
+  }
+}
+
+function updateSyncBadge() {
+  const el = document.getElementById('sync-status');
+  const countEl = document.getElementById('sync-count');
+  if (el && countEl) {
+    const count = syncQueue.length;
+    el.style.display = count > 0 ? 'flex' : 'none';
+    countEl.innerText = count;
+  }
+}
+
 
 function saveGasUrl() {
   const url = document.getElementById('set-gas-url').value.trim();
@@ -107,8 +206,10 @@ async function testConnection() {
 function updateUI() {
   updateStats(); renderRecentTransactions(); renderFullTransactions();
   renderBudgets(); renderApprovals(); renderMiniApprovals();
-  updateReportUI(); populateDropdowns();
-  renderSettingsSources(); renderSettingsCategories(); initCharts();
+  updateReportUI(); populateDropdowns(); populateReferenceDropdowns();
+
+  renderSettingsSources(); initCharts();
+
   updateEnvUI();
 }
 
@@ -156,9 +257,11 @@ async function changeEnvironment() {
 
 
 function updateStats() {
-  const init = (state.sources||[]).reduce((s,x) => s+parseInt(x.initialBalance||0),0) + parseInt(state.settings?.saldo_lalu||0);
-  const inc = state.transactions.filter(t=>t.type==='pemasukan'&&t.status==='approved').reduce((s,t)=>s+parseInt(t.amount||0),0);
-  const exp = state.transactions.filter(t=>t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+parseInt(t.amount||0),0);
+  const init = (state.sources||[]).reduce((s,x) => s+Number(x.initialBalance||0),0) + Number(state.settings?.saldo_lalu||0);
+
+  const inc = state.transactions.filter(t=>t.type==='pemasukan'&&t.status==='approved').reduce((s,t)=>s+Number(t.amount||0),0);
+  const exp = state.transactions.filter(t=>t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+Number(t.amount||0),0);
+
   const pend = state.transactions.filter(t=>t.status==='pending').length;
   setText('stat-income',formatIDR(inc)); setText('stat-expense',formatIDR(exp));
   setText('stat-balance',formatIDR(init+inc-exp)); setText('stat-pending',pend);
@@ -193,8 +296,9 @@ function renderBudgets() {
   const el = document.getElementById('budget-list'); if(!el) return; el.innerHTML='';
   (state.sources||[]).forEach(src => {
     const label = `[${src.type}] ${src.name}`;
-    const spent = state.transactions.filter(t=>t.category===label&&t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+parseInt(t.amount||0),0);
-    const init = parseInt(src.initialBalance||0);
+    const spent = state.transactions.filter(t=>t.category===label&&t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+Number(t.amount||0),0);
+    const init = Number(src.initialBalance||0);
+
     const pct = init>0?Math.min(100,(spent/init)*100):0;
     let clr='var(--success)'; if(pct>90) clr='var(--danger)'; else if(pct>75) clr='var(--warning)'; else if(pct>50) clr='var(--info)';
     const c = document.createElement('div'); c.className='card';
@@ -227,16 +331,18 @@ function renderMiniApprovals() {
 }
 
 function updateReportUI() {
-  const inc = state.transactions.filter(t=>t.type==='pemasukan'&&t.status==='approved').reduce((s,t)=>s+parseInt(t.amount||0),0);
-  const exp = state.transactions.filter(t=>t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+parseInt(t.amount||0),0);
-  const init = (state.sources||[]).reduce((s,x)=>s+parseInt(x.initialBalance||0),0)+parseInt(state.settings?.saldo_lalu||0);
+  const inc = state.transactions.filter(t=>t.type==='pemasukan'&&t.status==='approved').reduce((s,t)=>s+Number(t.amount||0),0);
+  const exp = state.transactions.filter(t=>t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+Number(t.amount||0),0);
+  const init = (state.sources||[]).reduce((s,x)=>s+Number(x.initialBalance||0),0)+Number(state.settings?.saldo_lalu||0);
+
   setText('rep-income',formatIDR(inc)); setText('rep-expense',formatIDR(exp)); setText('rep-balance',formatIDR(init+inc-exp));
   const el = document.getElementById('report-category-list'); if(!el) return; el.innerHTML='';
   (state.sources||[]).forEach(src => {
     const label = `[${src.type}] ${src.name}`;
-    const si = state.transactions.filter(t=>t.category===label&&t.type==='pemasukan'&&t.status==='approved').reduce((s,t)=>s+parseInt(t.amount||0),0);
-    const so = state.transactions.filter(t=>t.category===label&&t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+parseInt(t.amount||0),0);
-    const ib = parseInt(src.initialBalance||0);
+    const si = state.transactions.filter(t=>t.category===label&&t.type==='pemasukan'&&t.status==='approved').reduce((s,t)=>s+Number(t.amount||0),0);
+    const so = state.transactions.filter(t=>t.category===label&&t.type==='pengeluaran'&&t.status==='approved').reduce((s,t)=>s+Number(t.amount||0),0);
+    const ib = Number(src.initialBalance||0);
+
     const r = document.createElement('tr');
     r.innerHTML=`<td><b>${label}</b></td><td>${formatIDR(ib)}</td><td class="txt-success">+${formatIDR(si)}</td><td class="txt-danger">-${formatIDR(so)}</td><td style="font-weight:800">${formatIDR(ib+si-so)}</td>`;
     el.appendChild(r);
@@ -249,29 +355,38 @@ async function saveTransaction() {
     type: document.getElementById('trx-type').value,
     date: document.getElementById('trx-date').value,
     category: document.getElementById('trx-category').value,
-    subCategory: document.getElementById('trx-subcategory')?.value||'',
-    amount: parseInt(document.getElementById('trx-amount').value),
+    subCategory: '',
+    amount: parseFloat(document.getElementById('trx-amount').value),
     desc: document.getElementById('trx-desc').value,
-    payMethod: document.getElementById('trx-paymethod')?.value||'Transfer',
+    payMethod: 'Transfer',
     notes: document.getElementById('trx-notes')?.value||''
   };
   if (!data.amount||!data.desc) { showToast('Isi jumlah dan deskripsi!','error'); return; }
+
+  // Optimistic UI Update
+  const tempId = 'TRX-TEMP-' + Date.now();
+  const optimisticData = { ...data, id: tempId, status: 'pending', user: 'local' };
+  state.transactions.unshift(optimisticData);
+  localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(state));
+  updateUI();
+
   if (gasUrl) {
-    showLoading(true);
-    const res = await postToGAS({ action:'saveTransaction', data });
-    showLoading(false);
-    if (res?.success) { showToast('Transaksi tersimpan! ('+res.status+')','success'); await fetchFromGAS(); }
-    else showToast('Gagal menyimpan','error');
+    postToGAS({ action:'saveTransaction', data }).then(res => {
+      if (res?.success && !res.offline) {
+        showToast('Transaksi tersinkronisasi ke server!', 'success');
+        // Optionally refresh data if you want the real server ID
+        // fetchFromGAS(); 
+      }
+    });
   } else {
-    data.id = 'TRX-'+Date.now(); data.status = 'approved'; data.user = 'admin';
-    state.transactions.unshift(data);
-    showToast('Tersimpan (mode lokal)','success');
-    updateUI();
+    showToast('Tersimpan (mode lokal)', 'success');
   }
+
   closeModal('modal-transaksi');
   document.getElementById('trx-amount').value=''; document.getElementById('trx-desc').value='';
   if(document.getElementById('trx-notes')) document.getElementById('trx-notes').value='';
 }
+
 
 async function processApproval(id, status) {
   if (gasUrl) {
@@ -285,32 +400,68 @@ async function processApproval(id, status) {
 
 async function confirmDelete(id) {
   if (!confirm('Hapus transaksi '+id+'?')) return;
+  
+  // Optimistic UI Update
+  state.transactions = state.transactions.filter(t=>t.id!==id);
+  localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(state));
+  updateUI();
+
   if (gasUrl) {
-    const res = await postToGAS({ action:'deleteTransaction', id });
-    if (res?.success) { showToast('Dihapus!','success'); await fetchFromGAS(); }
+    postToGAS({ action:'deleteTransaction', id });
+    showToast('Dihapus!','success');
   } else {
-    state.transactions = state.transactions.filter(t=>t.id!==id);
-    showToast('Dihapus (lokal)','success'); updateUI();
+    showToast('Dihapus (lokal)','success');
   }
 }
+
 
 async function addSource() {
   const type = document.getElementById('set-source-type').value;
   const name = document.getElementById('set-source-name').value;
-  const init = parseInt(document.getElementById('set-source-init').value)||0;
+  const init = parseFloat(document.getElementById('set-source-init').value)||0;
+
   if (!name) { showToast('Nama rincian wajib diisi!','error'); return; }
-  if (gasUrl) { await postToGAS({ action:'saveSumberDana', type, name, initialBalance:init, description:'' }); await fetchFromGAS(); }
-  else { state.sources.push({ type, name, initialBalance:init, description:'', active:'Aktif' }); updateUI(); }
-  document.getElementById('set-source-name').value=''; document.getElementById('set-source-init').value='';
-  showToast('Sumber dana ditambahkan!','success');
+  
+  // Optimistic UI Update (Check for existing first)
+  const existingIdx = state.sources.findIndex(s => s.type === type && s.name === name);
+  if (existingIdx !== -1) {
+    state.sources[existingIdx].initialBalance = init;
+  } else {
+    state.sources.push({ type, name, initialBalance:init, description:'', active:'Aktif' });
+  }
+  
+  localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(state));
+  updateUI();
+  
+  if (gasUrl) { 
+    postToGAS({ action:'saveSumberDana', type, name, initialBalance:init, description:'' }); 
+  }
+  
+  document.getElementById('set-source-name').value=''; 
+  document.getElementById('set-source-init').value='';
+  showToast(existingIdx !== -1 ? 'Silpa diperbarui!' : 'Silpa ditambahkan!', 'success');
+
 }
 
+
+
 async function deleteSource(type, name) {
-  if (!confirm(`Hapus sumber dana [${type}] ${name}? Semua transaksi terkait tetap ada namun pagu akan hilang.`)) return;
-  if (gasUrl) { await postToGAS({ action:'deleteSumberDana', type, name }); await fetchFromGAS(); }
-  else { state.sources = state.sources.filter(s => !(s.type === type && s.name === name)); updateUI(); }
-  showToast('Dihapus!','success');
+  if (!confirm(`Hapus Silpa [${type}] ${name}? Semua transaksi terkait tetap ada namun pagu akan hilang.`)) return;
+
+  
+  // Optimistic UI Update
+  state.sources = state.sources.filter(s => !(s.type === type && s.name === name));
+  localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(state));
+  updateUI();
+
+  if (gasUrl) { 
+    postToGAS({ action:'deleteSumberDana', type, name }); 
+    showToast('Dihapus!','success');
+  } else {
+    showToast('Dihapus (lokal)','success'); 
+  }
 }
+
 
 function openEditSource(type, name) {
   const src = state.sources.find(s => s.type === type && s.name === name);
@@ -329,7 +480,8 @@ async function saveEditedSource() {
   const oldName = document.getElementById('edit-source-old-name').value;
   const newType = document.getElementById('edit-source-type').value;
   const newName = document.getElementById('edit-source-name').value;
-  const init = parseInt(document.getElementById('edit-source-init').value) || 0;
+  const init = parseFloat(document.getElementById('edit-source-init').value) || 0;
+
   const desc = document.getElementById('edit-source-desc').value;
   
   if (gasUrl) {
@@ -342,8 +494,9 @@ async function saveEditedSource() {
       description: desc 
     });
     showLoading(false);
-    if (res?.success) { showToast('Sumber dana diperbarui!', 'success'); await fetchFromGAS(); }
-    else showToast('Gagal memperbarui', 'error');
+    if (res?.success) { showToast('Silpa diperbarui!', 'success'); await fetchFromGAS(); }
+    else showToast('Gagal memperbarui Silpa', 'error');
+
   } else {
     const idx = state.sources.findIndex(s => s.type === oldType && s.name === oldName);
     if (idx !== -1) {
@@ -352,22 +505,15 @@ async function saveEditedSource() {
       state.sources[idx] = { type: newType, name: newName, initialBalance: init, description: desc, active: 'Aktif' };
       // Local cascade
       state.transactions.forEach(t => { if(t.category === oldLabel) t.category = newLabel; });
-      showToast('Diperbarui (lokal)', 'success');
+      showToast('Silpa diperbarui (lokal)', 'success');
       updateUI();
     }
   }
   closeModal('modal-edit-source');
 }
 
-async function addCategory() {
-  const name = document.getElementById('set-cat-name').value;
-  const type = document.getElementById('set-cat-type').value;
-  if (!name) { showToast('Nama wajib diisi!','error'); return; }
-  if (gasUrl) { await postToGAS({ action:'saveKategori', name, type, description:'' }); await fetchFromGAS(); }
-  else { state.categories.push({ name, type, description:'' }); updateUI(); }
-  document.getElementById('set-cat-name').value='';
-  showToast('Kategori ditambahkan!','success');
-}
+
+
 
 function renderSettingsSources() {
   const el = document.getElementById('settings-source-list'); if(!el) return; el.innerHTML='';
@@ -379,38 +525,35 @@ function renderSettingsSources() {
   lucide.createIcons();
 }
 
-async function deleteCategory(name) {
-  if (!confirm('Hapus kategori '+name+'?')) return;
-  if (gasUrl) { await postToGAS({ action:'deleteKategori', name }); await fetchFromGAS(); }
-  else { state.categories = state.categories.filter(c=>c.name!==name); updateUI(); }
-  showToast('Dihapus!','success');
-}
 
-function renderSettingsCategories() {
-  const el = document.getElementById('settings-cat-list'); if(!el) return; el.innerHTML='';
-  (state.categories||[]).forEach(c => {
-    const r = document.createElement('tr');
-    r.innerHTML=`<td style="font-weight:600">${c.name}</td><td><span class="status-badge status-${c.type==='pemasukan'?'approved':'rejected'}">${c.type}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteCategory('${c.name}')"><i data-lucide="trash-2" style="width:13px;height:13px"></i></button></td>`;
-    el.appendChild(r);
+
+
+
+function populateReferenceDropdowns() {
+  const refs = state.references || [];
+  ['set-source-type', 'edit-source-type'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const v = el.value;
+      el.innerHTML = refs.map(t => `<option value="${t}">${t}</option>`).join('');
+      if (v) el.value = v;
+    }
   });
-  lucide.createIcons();
 }
 
 function populateDropdowns() {
+
   const s1 = document.getElementById('trx-category');
   if (s1) { 
     const v=s1.value; 
     s1.innerHTML='<option value="">-- Pilih Sumber Dana --</option>'; 
-    (state.sources||[]).forEach(s=>{
-      const label = `[${s.type}] ${s.name}`;
+    (state.references||[]).forEach(t=>{
       const o=document.createElement('option');
-      o.value=label; o.text=label;
+      o.value=t; o.text=t;
       s1.add(o);
     }); 
     if(v) s1.value=v; 
   }
-  const s2 = document.getElementById('trx-subcategory');
-  if (s2) { const tp=document.getElementById('trx-type')?.value||'pengeluaran'; const v=s2.value; s2.innerHTML='<option value="">-- Pilih Kategori --</option>'; (state.categories||[]).filter(c=>c.type===tp).forEach(c=>{const o=document.createElement('option');o.value=c.name;o.text=c.name;s2.add(o);}); if(v) s2.value=v; }
 }
 
 // ─── NAV / UI ──────────────────────────────────────────────────
@@ -475,6 +618,35 @@ function showToast(msg,type='info') {
   c.appendChild(t); lucide.createIcons();
   setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(100px)';setTimeout(()=>t.remove(),300);},3500);
 }
-function formatIDR(a){return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(a||0);}
+function formatIDR(a){return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:2,maximumFractionDigits:2}).format(a||0);}
 function fmtDate(d){try{return new Date(d).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'});}catch(e){return d;}}
 function setText(id,v){const e=document.getElementById(id);if(e)e.innerText=v;}
+
+async function handleResetDatabase() {
+  if (!gasUrl) {
+    showToast('Harap hubungkan ke GAS terlebih dahulu untuk melakukan reset.', 'error');
+    return;
+  }
+
+  const confirm1 = confirm('PERINGATAN: Anda akan menghapus SELURUH data transaksi, master silpa, dan kategori. Tindakan ini tidak dapat dibatalkan. Lanjutkan?');
+  if (!confirm1) return;
+
+  const confirm2 = confirm('KONFIRMASI TERAKHIR: Seluruh catatan keuangan akan hilang selamanya dari spreadsheet. Benar-benar ingin mereset database?');
+  if (!confirm2) return;
+
+  showLoading(true);
+  try {
+    const res = await postToGAS({ action: 'resetDatabase' });
+    if (res?.success) {
+      showToast('Database berhasil dikosongkan!', 'success');
+      await fetchFromGAS(); // Refresh local state
+      closeModal('modal-settings');
+    } else {
+      showToast('Gagal mereset database: ' + (res?.message || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Terjadi kesalahan: ' + e.message, 'error');
+  }
+  showLoading(false);
+}
+
