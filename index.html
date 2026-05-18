@@ -79,6 +79,9 @@
             <div class="header-left">
                 <button class="mobile-toggle" onclick="toggleSidebar()"><i data-lucide="menu"></i></button>
                 <div id="env-badge" class="env-badge env-prod">Production</div>
+            </div>
+
+            <div class="search-bar-container">
                 <div class="search-bar"><i data-lucide="search"></i><input type="text" placeholder="Cari transaksi..."
                         id="search-input" oninput="handleSearch(this.value)"></div>
             </div>
@@ -90,7 +93,7 @@
                 <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Ganti tema"><i
                         data-lucide="moon"></i></button>
                 <button class="btn btn-primary" onclick="openModal('modal-transaksi')"><i
-                        data-lucide="plus"></i><span>Transaksi Baru</span></button>
+                        data-lucide="plus"></i><span class="btn-text-hide">Transaksi Baru</span></button>
             </div>
 
         </header>
