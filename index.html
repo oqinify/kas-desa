@@ -15,7 +15,6 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="styles.css">
-    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#6366f1">
 
 </head>
@@ -35,7 +34,10 @@
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo-icon"><i data-lucide="wallet"></i></div>
-            <span class="logo-text">Kas Desa</span>
+            <div>
+                <span class="logo-text">Kas Desa</span>
+                <div id="tahun-badge" style="font-size:0.65rem;color:#94a3b8;margin-top:1px;letter-spacing:0.5px">TA <span id="sidebar-tahun">—</span> &bull; <span id="sidebar-apbdes">Awal</span></div>
+            </div>
         </div>
         <nav class="nav-menu">
             <div class="nav-section">MENU UTAMA</div>
@@ -45,7 +47,7 @@
                 <li class="nav-item"><a class="nav-link" onclick="showPage('transaksi')" id="nav-transaksi"><i
                             data-lucide="list-ordered"></i><span>Transaksi</span></a></li>
                 <li class="nav-item"><a class="nav-link" onclick="showPage('anggaran')" id="nav-anggaran"><i
-                            data-lucide="bar-chart-3"></i><span>Silpa</span></a></li>
+                            data-lucide="bar-chart-3"></i><span>Anggaran</span></a></li>
                 <li class="nav-item"><a class="nav-link" onclick="showPage('approval')" id="nav-approval"><i
                             data-lucide="shield-check"></i><span>Approval</span><span id="badge-approval"
                             class="badge-notif" style="display:none">0</span></a></li>
@@ -54,16 +56,18 @@
             <ul class="nav-links">
                 <li class="nav-item"><a class="nav-link" onclick="showPage('laporan')" id="nav-laporan"><i
                             data-lucide="file-bar-chart"></i><span>Laporan Keuangan</span></a></li>
+                <li class="nav-item"><a class="nav-link" onclick="showPage('rkd')" id="nav-rkd"><i
+                            data-lucide="landmark"></i><span>RKD</span></a></li>
             </ul>
         </nav>
         <div class="sidebar-footer">
-            <div class="user-profile-mini">
+            <div class="user-profile-mini" onclick="toggleUserRole()" style="cursor:pointer" title="Klik untuk ganti user">
                 <div class="avatar" id="user-avatar">A</div>
                 <div class="user-info">
                     <div class="u-name" id="user-name">Admin</div>
                     <div class="u-role" id="conn-status">Mode Lokal</div>
                 </div>
-                <button class="btn-icon" onclick="openSettings()" title="Pengaturan"><i
+                <button class="btn-icon" onclick="event.stopPropagation(); openSettings()" title="Pengaturan"><i
                         data-lucide="settings"></i></button>
             </div>
         </div>
@@ -80,7 +84,7 @@
             </div>
 
             <div class="header-right">
-                <div id="sync-status" class="sync-status" style="display:none" title="Pending Sync">
+                <div id="sync-status" class="sync-status" style="display:none; cursor:pointer;" title="Klik untuk menghapus antrian (Pending Sync)" onclick="clearSyncQueue()">
                     <i data-lucide="refresh-cw"></i><span id="sync-count">0</span>
                 </div>
                 <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Ganti tema"><i
@@ -108,6 +112,22 @@
                     <p>Pantau anggaran dan pengeluaran kantor secara real-time.</p>
                 </div>
                 <div class="stats-grid">
+                    <div class="stat-card card-balance">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon balance"><i data-lucide="wallet"></i></div>
+                            <div class="stat-data"><span class="stat-label">Saldo Bersih</span>
+                                <div class="value" id="stat-balance">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card card-pending" style="border-left-color:var(--primary)">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon" style="color:var(--primary);background:rgba(59,130,246,0.1)"><i data-lucide="history"></i></div>
+                            <div class="stat-data"><span class="stat-label">Total SiLPA</span>
+                                <div class="value" id="stat-silpa">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="stat-card card-income">
                         <div class="stat-card-inner">
                             <div class="stat-icon income"><i data-lucide="trending-up"></i></div>
@@ -124,23 +144,8 @@
                             </div>
                         </div>
                     </div>
-                    <div class="stat-card card-balance">
-                        <div class="stat-card-inner">
-                            <div class="stat-icon balance"><i data-lucide="wallet"></i></div>
-                            <div class="stat-data"><span class="stat-label">Saldo Bersih</span>
-                                <div class="value" id="stat-balance">Rp 0</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="stat-card card-pending">
-                        <div class="stat-card-inner">
-                            <div class="stat-icon pending"><i data-lucide="clock"></i></div>
-                            <div class="stat-data"><span class="stat-label">Pending</span>
-                                <div class="value" id="stat-pending">0</div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
+
                 <div class="dashboard-main-grid">
                     <div class="grid-left">
                         <div class="chart-container card">
@@ -230,10 +235,18 @@
             <div id="page-anggaran" class="page-content" style="display:none">
                 <div class="page-header-title">
                     <h2>Manajemen Anggaran</h2>
-                    <p>Pantau pagu dan realisasi setiap Silpa.</p>
+                    <p>Pantau pagu dan realisasi setiap sumber dana.</p>
 
                 </div>
-                <div id="budget-list" class="budget-grid"></div>
+                <h3 style="margin: 1.5rem 0 1rem 0; font-size: 1rem; color: var(--text-title); display: flex; align-items: center; gap: 0.5rem">
+                    <i data-lucide="calendar" style="width:18px"></i> Anggaran Tahun Berjalan (Pendapatan Baru)
+                </h3>
+                <div id="budget-list-current" class="budget-grid"></div>
+
+                <h3 style="margin: 2.5rem 0 1rem 0; font-size: 1rem; color: var(--text-title); display: flex; align-items: center; gap: 0.5rem">
+                    <i data-lucide="history" style="width:18px"></i> Anggaran SiLPA (Saldo Awal)
+                </h3>
+                <div id="budget-list-silpa" class="budget-grid"></div>
             </div>
 
             <!-- APPROVAL -->
@@ -255,6 +268,14 @@
 
                 </div>
                 <div class="report-summary-grid">
+                    <div class="card">
+                        <div style="text-align:center;padding:0.4rem 0">
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
+                                TOTAL SILPA</div>
+                            <div id="rep-silpa" style="font-size:1.4rem;font-weight:800;color:var(--text-title)">Rp 0
+                            </div>
+                        </div>
+                    </div>
                     <div class="card">
                         <div style="text-align:center;padding:0.4rem 0">
                             <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
@@ -296,6 +317,70 @@
                                 </tr>
                             </thead>
                             <tbody id="report-category-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RKD -->
+            <div id="page-rkd" class="page-content" style="display:none">
+                <div class="page-header-title">
+                    <h2>Rekening Kas Desa (RKD)</h2>
+                    <p>Daftar transaksi pemasukan dan pengeluaran melalui rekening bank desa.</p>
+                </div>
+                <div class="report-summary-grid" style="margin-bottom:1.5rem">
+                    <div class="card">
+                        <div style="text-align:center;padding:0.4rem 0">
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">DEBET (MASUK)</div>
+                            <div id="rkd-debet" style="font-size:1.4rem;font-weight:800;color:var(--success)">Rp 0</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div style="text-align:center;padding:0.4rem 0">
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">KREDIT (KELUAR)</div>
+                            <div id="rkd-kredit" style="font-size:1.4rem;font-weight:800;color:var(--danger)">Rp 0</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div style="text-align:center;padding:0.4rem 0">
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">SALDO AKHIR</div>
+                            <div id="rkd-saldo" style="font-size:1.4rem;font-weight:800;color:var(--primary)">Rp 0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3>Buku Kas Rekening Bank</h3>
+                        <select id="rkd-month-filter" class="form-control" style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; border-radius:6px;" onchange="renderRKD()">
+                            <option value="all">Semua Bulan</option>
+                            <option value="01">Januari</option>
+                            <option value="02">Februari</option>
+                            <option value="03">Maret</option>
+                            <option value="04">April</option>
+                            <option value="05">Mei</option>
+                            <option value="06">Juni</option>
+                            <option value="07">Juli</option>
+                            <option value="08">Agustus</option>
+                            <option value="09">September</option>
+                            <option value="10">Oktober</option>
+                            <option value="11">November</option>
+                            <option value="12">Desember</option>
+                        </select>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>NO</th>
+                                    <th>TANGGAL</th>
+                                    <th>URAIAN</th>
+                                    <th>SUMBER DANA</th>
+                                    <th>DEBET</th>
+                                    <th>KREDIT</th>
+                                    <th>SALDO</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rkd-list"></tbody>
                         </table>
                     </div>
                 </div>
@@ -370,16 +455,39 @@
                         </p>
                     </div>
                 </div>
+                <div class="settings-section">
+                    <h3><i data-lucide="settings-2" style="width:16px;height:16px"></i> Pengaturan Umum</h3>
+                    <div class="form-group">
+                        <label>Status APBDes</label>
+                        <select id="set-apbdes" onchange="saveSetting('APBDes', this.value)" style="max-width:240px">
+                            <option value="Awal">Awal</option>
+                            <option value="Perubahan">Perubahan</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Tahun Anggaran</label>
+                        <div style="display:flex;gap:0.5rem;align-items:center;max-width:240px">
+                            <input type="number" id="set-tahun" placeholder="2025" min="2020" max="2040"
+                                style="width:130px;padding:0.5rem;border:1px solid var(--border);border-radius:8px;font-size:0.85rem">
+                            <button class="btn btn-primary btn-sm" onclick="saveTahunAnggaran()">Simpan</button>
+                        </div>
+                        <p style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem">Digunakan untuk filter transaksi per tahun.</p>
+                    </div>
+                </div>
 
                 <div class="settings-section">
-                    <h3><i data-lucide="database" style="width:16px;height:16px"></i> Master Silpa</h3>
-                    <div class="add-source-form">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+                        <h3 style="margin:0"><i data-lucide="database" style="width:16px;height:16px"></i> Master Silpa</h3>
+                        <div id="import-silpa-container"></div>
+                    </div>
+                    <div class="add-source-form" style="display:flex;gap:0.4rem;flex-wrap:wrap">
                         <select id="set-source-type"
-                            style="flex:0.3;padding:0.45rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.8rem">
+                            style="flex:1;min-width:100px;padding:0.45rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.8rem">
                         </select>
 
-                        <input type="text" id="set-source-name" placeholder="Rincian (misal: Tahap 1)" style="flex:1">
-                        <input type="number" id="set-source-init" placeholder="Saldo" style="width:100px" step="0.01">
+                        <input type="text" id="set-source-name" placeholder="Rincian (misal: Tahap 1)" style="flex:2;min-width:120px">
+                        <input type="number" id="set-source-init" placeholder="Saldo" style="flex:1;min-width:80px" step="0.01">
+                        <input type="number" id="set-source-year" placeholder="Tahun (opsional)" style="flex:1;min-width:80px">
 
                         <button class="btn btn-primary btn-sm" onclick="addSource()">Tambah</button>
                     </div>
@@ -388,9 +496,9 @@
                             <thead>
                                 <tr>
                                     <th>SUMBER DANA</th>
-
                                     <th>NAMA</th>
                                     <th>SALDO</th>
+                                    <th>TAHUN</th>
                                     <th>AKSI</th>
                                 </tr>
                             </thead>
@@ -409,6 +517,9 @@
                         menghapus seluruh data transaksi dan silpa secara permanen dari
                         spreadsheet.<br><b>Hanya diperbolehkan di mode Development (DEV).</b></p>
 
+                    <button class="btn btn-outline btn-sm" onclick="runDiagnosis()" style="margin-right:0.5rem; border-color:var(--info); color:var(--info);"><i data-lucide="bug" style="width:13px;height:13px"></i> Diagnosa Data GAS</button>
+                    <button class="btn btn-danger btn-sm" onclick="clearCacheAndReload()"
+                        style="background:#f59e0b; border-color:#f59e0b; margin-right:0.5rem"><i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Hapus Cache & Muat Ulang</button>
                     <button class="btn btn-danger btn-sm" onclick="handleResetDatabase()"
                         style="background:#dc2626; border-color:#dc2626;">Reset Seluruh Database</button>
                 </div>
@@ -426,18 +537,19 @@
             <div class="modal-body">
                 <input type="hidden" id="edit-source-old-type">
                 <input type="hidden" id="edit-source-old-name">
+                <input type="hidden" id="edit-source-old-year">
                 <div class="form-row">
                     <div class="form-group"><label>Sumber Dana</label>
                         <select id="edit-source-type">
                         </select>
-
                     </div>
                     <div class="form-group"><label>Nama Rincian</label><input type="text" id="edit-source-name"></div>
                 </div>
-                <div class="form-group"><label>Saldo Awal (Rp)</label>
-                    <div class="input-prefix"><span>Rp</span><input type="number" id="edit-source-init" step="0.01">
+                <div class="form-row">
+                    <div class="form-group"><label>Saldo Awal (Rp)</label>
+                        <div class="input-prefix"><span>Rp</span><input type="number" id="edit-source-init" step="0.01"></div>
                     </div>
-
+                    <div class="form-group"><label>Tahun (opsional)</label><input type="number" id="edit-source-year"></div>
                 </div>
                 <div class="form-group"><label>Keterangan</label><textarea id="edit-source-desc"></textarea></div>
             </div>
@@ -450,11 +562,6 @@
     <script src="app.js"></script>
     <script>
         lucide.createIcons();
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').then(reg => console.log('SW Registered')).catch(err => console.log('SW Fail', err));
-            });
-        }
     </script>
 </body>
 

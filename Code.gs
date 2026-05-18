@@ -41,6 +41,7 @@ function doGet(e) {
       case 'initDB': result = initDatabase(); break;
       case 'getEnvs': result = getEnvironments(); break;
       case 'switchEnv': result = switchEnvironment(e.parameter.env); break;
+      case 'debugData': result = getDebugData(); break;
       default: result = { error: 'Unknown action: ' + action };
 
     }
@@ -63,9 +64,9 @@ function doPost(e) {
       case 'updateTransaction': result = updateTransaction(body.id, body.data); break;
       case 'deleteTransaction': result = deleteTransaction(body.id); break;
       case 'updateApproval': result = updateApprovalStatus(body.id, body.status); break;
-      case 'saveSumberDana': result = saveSumberDana(body.type, body.name, body.initialBalance, body.description); break;
-      case 'deleteSumberDana': result = deleteSumberDana(body.type, body.name); break;
-      case 'editSumberDana': result = editSumberDana(body.oldType, body.oldName, body.newType, body.newName, body.initialBalance, body.description); break;
+      case 'saveSumberDana': result = saveSumberDana(body.type, body.name, body.initialBalance, body.description, body.year); break;
+      case 'deleteSumberDana': result = deleteSumberDana(body.type, body.name, body.year); break;
+      case 'editSumberDana': result = editSumberDana(body.oldType, body.oldName, body.oldYear, body.newType, body.newName, body.newYear, body.initialBalance, body.description); break;
       case 'saveKategori': result = saveKategori(body.name, body.type, body.description); break;
       case 'deleteKategori': result = deleteKategori(body.name); break;
       case 'updateSettings': result = updateSettings(body.key, body.value); break;
@@ -117,7 +118,7 @@ function initDatabase() {
   const schemas = [
     { name: 'Transaksi', headers: ['ID','Tanggal','Tipe','Sumber Dana','Kategori','Deskripsi','Jumlah','Metode Bayar','Status','Catatan','User','Timestamp'] },
 
-    { name: 'Silpa', headers: ['Sumber Dana','Nama','Saldo Awal','Keterangan','Status Aktif'] },
+    { name: 'Silpa', headers: ['Sumber Dana','Nama','Saldo Awal','Keterangan','Status Aktif','Tahun'] },
 
 
     { name: 'Settings', headers: ['Key','Value'] },
@@ -141,6 +142,7 @@ function initDatabase() {
     setSheet.appendRow(['saldo_lalu',0]);
     setSheet.appendRow(['tahun_anggaran',CONFIG.TAHUN_ANGGARAN]);
     setSheet.appendRow(['nama_kantor',CONFIG.NAMA_KANTOR]);
+    setSheet.appendRow(['APBDes','Awal']);
   }
   // Default Referensi
   const refSheet = ss.getSheetByName('Referensi');
@@ -174,17 +176,42 @@ function getAllData() {
     const lastRow = trxSheet.getLastRow();
     let trxData = [];
     if (lastRow > 1) trxData = trxSheet.getRange(2,1,lastRow-1,12).getValues();
-    transactions = trxData.map(r => ({
-      id:r[0], date: r[1] instanceof Date ? Utilities.formatDate(r[1],CONFIG.TIMEZONE,"yyyy-MM-dd") : r[1],
-      type:r[2], category:r[3], subCategory:r[4], desc:r[5], amount:r[6], payMethod:r[7], status:r[8], notes:r[9], user:r[10], timestamp:r[11]
-    })).reverse();
+    transactions = trxData.map(r => {
+      // Normalisasi amount: hapus format mata uang, parse ke angka
+      const rawAmount = r[6];
+      const amount = typeof rawAmount === 'number'
+        ? rawAmount
+        : Number(String(rawAmount).replace(/[^0-9,.-]/g, '').replace(',', '.')) || 0;
+
+      return {
+        id:       String(r[0] || '').trim(),
+        date:     r[1] instanceof Date ? Utilities.formatDate(r[1], CONFIG.TIMEZONE, "yyyy-MM-dd") : String(r[1] || '').trim(),
+        type:     String(r[2] || '').trim().toLowerCase(),
+        category: String(r[3] || '').trim(),
+        subCategory: String(r[4] || '').trim(),
+        desc:     String(r[5] || '').trim(),
+        amount:   amount,
+        payMethod: String(r[7] || '').trim(),
+        status:   String(r[8] || '').trim().toLowerCase(),
+        notes:    String(r[9] || '').trim(),
+        user:     String(r[10] || '').trim(),
+        timestamp: r[11]
+      };
+    }).reverse();
   }
 
   const srcSheet = ss.getSheetByName('Silpa');
   let sources = [];
   if (srcSheet) {
-    const srcData = srcSheet.getLastRow()>1 ? srcSheet.getRange(2,1,srcSheet.getLastRow()-1,5).getValues() : [];
-    sources = srcData.map(r => ({ type:r[0], name:r[1], initialBalance:r[2], description:r[3], active:r[4] }));
+    const srcData = srcSheet.getLastRow()>1 ? srcSheet.getRange(2,1,srcSheet.getLastRow()-1,6).getValues() : [];
+    sources = srcData.map(r => ({ 
+      type: r[0], 
+      name: r[1], 
+      initialBalance: r[2], 
+      description: r[3], 
+      active: r[4], 
+      year: r[5] ? String(r[5]) : '' 
+    }));
   }
 
 
@@ -214,7 +241,7 @@ function getAllData() {
       active: getActiveEnv_(),
       name: ENVIRONMENTS[getActiveEnv_()]?.name || 'Default'
     },
-    dbStatus: (trxSheet && srcSheet && catSheet && setSheet) ? 'ready' : 'needs_init'
+    dbStatus: (trxSheet && srcSheet && setSheet && refSheet) ? 'ready' : 'needs_init'
   };
 }
 
@@ -225,7 +252,13 @@ function saveTransactionToSheet(data) {
   const ss = getSpreadsheet_();
   const sheet = ss.getSheetByName('Transaksi');
   const id = 'TRX-' + Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyyMMddHHmmss") + '-' + Math.floor(Math.random()*1000);
-  const status = (data.type === 'pengeluaran' && data.amount >= CONFIG.BATAS_APPROVAL) ? 'pending' : 'approved';
+  
+  // Jika user admin, matikan approval (selalu approved)
+  let status = 'approved';
+  if (data.user !== 'admin') {
+     status = (data.type === 'pengeluaran' && data.amount >= CONFIG.BATAS_APPROVAL) ? 'pending' : 'approved';
+  }
+  
   sheet.appendRow([id, data.date, data.type, data.category, data.subCategory||'', data.desc, data.amount, data.payMethod||'Transfer', status, data.notes||'', data.user||'web', new Date()]);
   _logActivity(data.user||'web', 'CREATE', 'Silpa baru: '+id);
 
@@ -261,37 +294,47 @@ function updateApprovalStatus(id, status) {
 }
 
 // ─── MASTER DATA CRUD ─────────────────────────────────────────
-function saveSumberDana(type, name, initialBalance, description) {
+function saveSumberDana(type, name, initialBalance, description, year) {
   const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Silpa'); const data = sheet.getDataRange().getValues();
+  const yrStr = year ? String(year).trim() : '';
 
-  // Check if same type and name exists
+  // Check if same type, name, and year exists
   for (let i=1;i<data.length;i++) { 
-    if(data[i][0]===type && data[i][1]===name) { 
+    if(data[i][0]===type && data[i][1]===name && String(data[i][5]||'')===yrStr) { 
       sheet.getRange(i+1,3).setValue(initialBalance); 
       if(description) sheet.getRange(i+1,4).setValue(description); 
       return { success:true, mode:'updated' }; 
     } 
   }
-  sheet.appendRow([type, name, initialBalance, description||'', 'Aktif']);
+  sheet.appendRow([type, name, initialBalance, description||'', 'Aktif', yrStr]);
   return { success:true, mode:'created' };
 }
-function deleteSumberDana(type, name) {
+function deleteSumberDana(type, name, year) {
   const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Silpa'); const data = sheet.getDataRange().getValues();
+  const yrStr = year ? String(year).trim() : '';
 
-  for (let i=1;i<data.length;i++) { if(data[i][0]===type && data[i][1]===name) { sheet.deleteRow(i+1); return { success:true }; } }
+  for (let i=1;i<data.length;i++) { 
+    if(data[i][0]===type && data[i][1]===name && String(data[i][5]||'')===yrStr) { 
+      sheet.deleteRow(i+1); 
+      return { success:true }; 
+    } 
+  }
   return { success:false };
 }
-function editSumberDana(oldType, oldName, newType, newName, newBalance, newDescription) {
+function editSumberDana(oldType, oldName, oldYear, newType, newName, newYear, newBalance, newDescription) {
   const ss = getSpreadsheet_();
   const sheet = ss.getSheetByName('Silpa');
+  const oldYrStr = oldYear ? String(oldYear).trim() : '';
+  const newYrStr = newYear ? String(newYear).trim() : '';
 
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === oldType && data[i][1] === oldName) {
+    if (data[i][0] === oldType && data[i][1] === oldName && String(data[i][5]||'') === oldYrStr) {
       if (newType) sheet.getRange(i + 1, 1).setValue(newType);
       if (newName) sheet.getRange(i + 1, 2).setValue(newName);
       if (newBalance !== undefined) sheet.getRange(i + 1, 3).setValue(newBalance);
       if (newDescription !== undefined) sheet.getRange(i + 1, 4).setValue(newDescription);
+      sheet.getRange(i + 1, 6).setValue(newYrStr);
       
       // Cascading update in Transaksi sheet if name/type changed
       if ((newType && newType !== oldType) || (newName && newName !== oldName)) {
@@ -357,4 +400,27 @@ function resetDatabase() {
   
   _logActivity('system', 'RESET', 'Database direset ke kondisi awal');
   return { success: true, message: 'Database berhasil dikosongkan!' };
+}
+
+// ─── DEBUG ─────────────────────────────────────────────────────
+function getDebugData() {
+  const ss = getSpreadsheet_();
+  const trxSheet = ss.getSheetByName('Transaksi');
+  if (!trxSheet) return { error: 'Sheet Transaksi tidak ditemukan!' };
+  const lastRow = trxSheet.getLastRow();
+  if (lastRow <= 1) return { totalRows: 0, rawRows: [], message: 'Sheet Transaksi kosong' };
+  const limit = Math.min(lastRow - 1, 10);
+  const raw = trxSheet.getRange(2, 1, limit, 12).getValues();
+  return {
+    totalRows: lastRow - 1,
+    rawRows: raw.map((r, i) => ({
+      row: i + 2,
+      id:         String(r[0]),
+      tipe:       String(r[2]),
+      category:   String(r[3]),
+      amount:     r[6],
+      amountType: typeof r[6],
+      status:     String(r[8])
+    }))
+  };
 }
