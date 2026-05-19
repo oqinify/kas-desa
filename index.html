@@ -36,7 +36,8 @@
             <div class="logo-icon"><i data-lucide="wallet"></i></div>
             <div>
                 <span class="logo-text">Kas Desa</span>
-                <div id="tahun-badge" style="font-size:0.65rem;color:#94a3b8;margin-top:1px;letter-spacing:0.5px">TA <span id="sidebar-tahun">—</span> &bull; <span id="sidebar-apbdes">Awal</span></div>
+                <div id="tahun-badge" style="font-size:0.65rem;color:#94a3b8;margin-top:1px;letter-spacing:0.5px">TA
+                    <span id="sidebar-tahun">—</span> &bull; <span id="sidebar-apbdes">Awal</span></div>
             </div>
         </div>
         <nav class="nav-menu">
@@ -45,23 +46,29 @@
                 <li class="nav-item"><a class="nav-link active" onclick="showPage('dashboard')" id="nav-dashboard"><i
                             data-lucide="layout-grid"></i><span>Dashboard</span></a></li>
                 <li class="nav-item"><a class="nav-link" onclick="showPage('transaksi')" id="nav-transaksi"><i
-                            data-lucide="list-ordered"></i><span>Transaksi</span></a></li>
+                            data-lucide="list-ordered"></i><span>Transaksi APBDes</span></a></li>
                 <li class="nav-item"><a class="nav-link" onclick="showPage('anggaran')" id="nav-anggaran"><i
                             data-lucide="bar-chart-3"></i><span>Anggaran</span></a></li>
                 <li class="nav-item"><a class="nav-link" onclick="showPage('approval')" id="nav-approval"><i
                             data-lucide="shield-check"></i><span>Approval</span><span id="badge-approval"
                             class="badge-notif" style="display:none">0</span></a></li>
             </ul>
+            <div class="nav-section">NON-APBDES</div>
+            <ul class="nav-links">
+                <li class="nav-item"><a class="nav-link" onclick="showPage('non-apbdes')" id="nav-non-apbdes"><i
+                            data-lucide="coins"></i><span>Buku Pembantu</span></a></li>
+            </ul>
             <div class="nav-section">LAPORAN</div>
             <ul class="nav-links">
                 <li class="nav-item"><a class="nav-link" onclick="showPage('laporan')" id="nav-laporan"><i
                             data-lucide="file-bar-chart"></i><span>Laporan Keuangan</span></a></li>
                 <li class="nav-item"><a class="nav-link" onclick="showPage('rkd')" id="nav-rkd"><i
-                            data-lucide="landmark"></i><span>RKD</span></a></li>
+                            data-lucide="landmark"></i><span>Rekening Koran RKD</span></a></li>
             </ul>
         </nav>
         <div class="sidebar-footer">
-            <div class="user-profile-mini" onclick="toggleUserRole()" style="cursor:pointer" title="Klik untuk ganti user">
+            <div class="user-profile-mini" onclick="toggleUserRole()" style="cursor:pointer"
+                title="Klik untuk ganti user">
                 <div class="avatar" id="user-avatar">A</div>
                 <div class="user-info">
                     <div class="u-name" id="user-name">Admin</div>
@@ -87,13 +94,14 @@
             </div>
 
             <div class="header-right">
-                <div id="sync-status" class="sync-status" style="display:none; cursor:pointer;" title="Klik untuk menghapus antrian (Pending Sync)" onclick="clearSyncQueue()">
+                <div id="sync-status" class="sync-status" style="display:none; cursor:pointer;"
+                    title="Klik untuk menghapus antrian (Pending Sync)" onclick="clearSyncQueue()">
                     <i data-lucide="refresh-cw"></i><span id="sync-count">0</span>
                 </div>
                 <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Ganti tema"><i
                         data-lucide="moon"></i></button>
-                <button class="btn btn-primary" onclick="openModal('modal-transaksi')"><i
-                        data-lucide="plus"></i><span class="btn-text-hide">Transaksi Baru</span></button>
+                <button class="btn btn-primary" onclick="openModal('modal-transaksi')"><i data-lucide="plus"></i><span
+                        class="btn-text-hide">Transaksi Baru</span></button>
             </div>
 
         </header>
@@ -125,7 +133,8 @@
                     </div>
                     <div class="stat-card card-pending" style="border-left-color:var(--primary)">
                         <div class="stat-card-inner">
-                            <div class="stat-icon" style="color:var(--primary);background:rgba(59,130,246,0.1)"><i data-lucide="history"></i></div>
+                            <div class="stat-icon" style="color:var(--primary);background:rgba(59,130,246,0.1)"><i
+                                    data-lucide="history"></i></div>
                             <div class="stat-data"><span class="stat-label">Total SiLPA</span>
                                 <div class="value" id="stat-silpa">Rp 0</div>
                             </div>
@@ -234,6 +243,69 @@
                 </div>
             </div>
 
+            <!-- NON-APBDES -->
+            <div id="page-non-apbdes" class="page-content" style="display:none">
+                <div class="page-header-title">
+                    <h2>Transaksi Non-APBDes</h2>
+                    <p>Catatan keuangan di luar anggaran resmi APBDes (Dana Titipan Pajak, Swadaya, dsb).</p>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card card-balance">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon balance"><i data-lucide="wallet"></i></div>
+                            <div class="stat-data"><span class="stat-label">Saldo Bersih Non-APBDes</span>
+                                <div class="value" id="stat-non-balance">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card card-income">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon income"><i data-lucide="trending-up"></i></div>
+                            <div class="stat-data"><span class="stat-label">Pemasukan Non-APBDes</span>
+                                <div class="value" id="stat-non-income">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card card-expense">
+                        <div class="stat-card-inner">
+                            <div class="stat-icon expense"><i data-lucide="trending-down"></i></div>
+                            <div class="stat-data"><span class="stat-label">Pengeluaran Non-APBDes</span>
+                                <div class="value" id="stat-non-expense">Rp 0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Daftar Transaksi Non-APBDes</h3>
+                        <div style="display: flex; gap: 0.5rem">
+                            <button class="btn btn-outline" onclick="openModalSetorRKD()"><i
+                                    data-lucide="arrow-right-left" style="width:13px;height:13px"></i> Setor Sisa ke
+                                RKD</button>
+                            <button class="btn btn-primary" onclick="openModalNonApbdes()"><i data-lucide="plus"
+                                    style="width:13px;height:13px"></i> Tambah Transaksi</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>TANGGAL</th>
+                                    <th>TIPE</th>
+                                    <th>SUMBER DANA</th>
+                                    <th>DESKRIPSI</th>
+                                    <th>JUMLAH</th>
+                                    <th>METODE</th>
+                                    <th>AKSI</th>
+                                </tr>
+                            </thead>
+                            <tbody id="non-apbdes-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- ANGGARAN -->
             <div id="page-anggaran" class="page-content" style="display:none">
                 <div class="page-header-title">
@@ -241,12 +313,14 @@
                     <p>Pantau pagu dan realisasi setiap sumber dana.</p>
 
                 </div>
-                <h3 style="margin: 1.5rem 0 1rem 0; font-size: 1rem; color: var(--text-title); display: flex; align-items: center; gap: 0.5rem">
+                <h3
+                    style="margin: 1.5rem 0 1rem 0; font-size: 1rem; color: var(--text-title); display: flex; align-items: center; gap: 0.5rem">
                     <i data-lucide="calendar" style="width:18px"></i> Anggaran Tahun Berjalan (Pendapatan Baru)
                 </h3>
                 <div id="budget-list-current" class="budget-grid"></div>
 
-                <h3 style="margin: 2.5rem 0 1rem 0; font-size: 1rem; color: var(--text-title); display: flex; align-items: center; gap: 0.5rem">
+                <h3
+                    style="margin: 2.5rem 0 1rem 0; font-size: 1rem; color: var(--text-title); display: flex; align-items: center; gap: 0.5rem">
                     <i data-lucide="history" style="width:18px"></i> Anggaran SiLPA (Saldo Awal)
                 </h3>
                 <div id="budget-list-silpa" class="budget-grid"></div>
@@ -328,25 +402,28 @@
             <!-- RKD -->
             <div id="page-rkd" class="page-content" style="display:none">
                 <div class="page-header-title">
-                    <h2>Rekening Kas Desa (RKD)</h2>
+                    <h2>Rekening Koran RKD</h2>
                     <p>Daftar transaksi pemasukan dan pengeluaran melalui rekening bank desa.</p>
                 </div>
                 <div class="report-summary-grid" style="margin-bottom:1.5rem">
                     <div class="card">
                         <div style="text-align:center;padding:0.4rem 0">
-                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">DEBET (MASUK)</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
+                                DEBET (MASUK)</div>
                             <div id="rkd-debet" style="font-size:1.4rem;font-weight:800;color:var(--success)">Rp 0</div>
                         </div>
                     </div>
                     <div class="card">
                         <div style="text-align:center;padding:0.4rem 0">
-                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">KREDIT (KELUAR)</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
+                                KREDIT (KELUAR)</div>
                             <div id="rkd-kredit" style="font-size:1.4rem;font-weight:800;color:var(--danger)">Rp 0</div>
                         </div>
                     </div>
                     <div class="card">
                         <div style="text-align:center;padding:0.4rem 0">
-                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">SALDO AKHIR</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.2rem">
+                                SALDO AKHIR</div>
                             <div id="rkd-saldo" style="font-size:1.4rem;font-weight:800;color:var(--primary)">Rp 0</div>
                         </div>
                     </div>
@@ -354,7 +431,9 @@
                 <div class="card">
                     <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
                         <h3>Buku Kas Rekening Bank</h3>
-                        <select id="rkd-month-filter" class="form-control" style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; border-radius:6px;" onchange="renderRKD()">
+                        <select id="rkd-month-filter" class="form-control"
+                            style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; border-radius:6px;"
+                            onchange="renderRKD()">
                             <option value="all">Semua Bulan</option>
                             <option value="01">Januari</option>
                             <option value="02">Februari</option>
@@ -416,8 +495,17 @@
 
                 <div class="form-group"><label>Deskripsi</label><textarea id="trx-desc"
                         placeholder="Keterangan transaksi..."></textarea></div>
-                <div class="form-group"><label>Catatan (opsional)</label><input type="text" id="trx-notes"
-                        placeholder="Catatan..."></div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Metode Bayar</label>
+                        <select id="trx-pay-method">
+                            <option value="Transfer">Transfer (Bank RKD)</option>
+                            <option value="Tunai">Tunai (Kas)</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Catatan (opsional)</label><input type="text" id="trx-notes"
+                            placeholder="Catatan..."></div>
+                </div>
             </div>
             <div class="modal-footer"><button class="btn btn-outline"
                     onclick="closeModal('modal-transaksi')">Batal</button><button class="btn btn-primary"
@@ -474,13 +562,32 @@
                                 style="width:130px;padding:0.5rem;border:1px solid var(--border);border-radius:8px;font-size:0.85rem">
                             <button class="btn btn-primary btn-sm" onclick="saveTahunAnggaran()">Simpan</button>
                         </div>
-                        <p style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem">Digunakan untuk filter transaksi per tahun.</p>
+                        <p style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem">Digunakan untuk filter
+                            transaksi per tahun.</p>
                     </div>
                 </div>
 
-                <div class="settings-section">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
-                        <h3 style="margin:0"><i data-lucide="database" style="width:16px;height:16px"></i> Master Silpa</h3>
+                <div class="settings-section" style="border-top:1px solid var(--border); padding-top:1.5rem;">
+                    <h3><i data-lucide="list" style="width:16px;height:16px"></i> Master Referensi Sumber Dana</h3>
+                    <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.75rem">
+                        Kelola kategori utama sumber dana (misal: DD Earmark, Non-APBDes, dll).
+                    </p>
+                    <div style="display:flex;gap:0.4rem;margin-bottom:0.9rem;flex-wrap:wrap">
+                        <input type="text" id="set-ref-name" placeholder="Nama Kategori (misal: Non-APBDes)"
+                            style="flex:2;min-width:180px;padding:0.45rem 0.65rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.8rem;outline:none">
+                        <button class="btn btn-primary btn-sm" onclick="addCustomReferensi()">Tambah Kategori</button>
+                    </div>
+                    <div id="set-ref-list"
+                        style="display:flex;flex-wrap:wrap;gap:0.4rem;max-height:120px;overflow-y:auto;padding:0.2rem 0">
+                        <!-- Dynamic list of tags -->
+                    </div>
+                </div>
+
+                <div class="settings-section" style="border-top:1px solid var(--border); padding-top:1.5rem;">
+                    <div
+                        style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+                        <h3 style="margin:0"><i data-lucide="database" style="width:16px;height:16px"></i> Master Silpa
+                        </h3>
                         <div id="import-silpa-container"></div>
                     </div>
                     <div class="add-source-form" style="display:flex;gap:0.4rem;flex-wrap:wrap">
@@ -488,9 +595,12 @@
                             style="flex:1;min-width:100px;padding:0.45rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.8rem">
                         </select>
 
-                        <input type="text" id="set-source-name" placeholder="Rincian (misal: Tahap 1)" style="flex:2;min-width:120px">
-                        <input type="number" id="set-source-init" placeholder="Saldo" style="flex:1;min-width:80px" step="0.01">
-                        <input type="number" id="set-source-year" placeholder="Tahun (opsional)" style="flex:1;min-width:80px">
+                        <input type="text" id="set-source-name" placeholder="Rincian (misal: Tahap 1)"
+                            style="flex:2;min-width:120px">
+                        <input type="number" id="set-source-init" placeholder="Saldo" style="flex:1;min-width:80px"
+                            step="0.01">
+                        <input type="number" id="set-source-year" placeholder="Tahun (opsional)"
+                            style="flex:1;min-width:80px">
 
                         <button class="btn btn-primary btn-sm" onclick="addSource()">Tambah</button>
                     </div>
@@ -520,9 +630,13 @@
                         menghapus seluruh data transaksi dan silpa secara permanen dari
                         spreadsheet.<br><b>Hanya diperbolehkan di mode Development (DEV).</b></p>
 
-                    <button class="btn btn-outline btn-sm" onclick="runDiagnosis()" style="margin-right:0.5rem; border-color:var(--info); color:var(--info);"><i data-lucide="bug" style="width:13px;height:13px"></i> Diagnosa Data GAS</button>
+                    <button class="btn btn-outline btn-sm" onclick="runDiagnosis()"
+                        style="margin-right:0.5rem; border-color:var(--info); color:var(--info);"><i data-lucide="bug"
+                            style="width:13px;height:13px"></i> Diagnosa Data GAS</button>
                     <button class="btn btn-danger btn-sm" onclick="clearCacheAndReload()"
-                        style="background:#f59e0b; border-color:#f59e0b; margin-right:0.5rem"><i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Hapus Cache & Muat Ulang</button>
+                        style="background:#f59e0b; border-color:#f59e0b; margin-right:0.5rem"><i
+                            data-lucide="refresh-cw" style="width:13px;height:13px"></i> Hapus Cache & Muat
+                        Ulang</button>
                     <button class="btn btn-danger btn-sm" onclick="handleResetDatabase()"
                         style="background:#dc2626; border-color:#dc2626;">Reset Seluruh Database</button>
                 </div>
@@ -550,15 +664,59 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label>Saldo Awal (Rp)</label>
-                        <div class="input-prefix"><span>Rp</span><input type="number" id="edit-source-init" step="0.01"></div>
+                        <div class="input-prefix"><span>Rp</span><input type="number" id="edit-source-init" step="0.01">
+                        </div>
                     </div>
-                    <div class="form-group"><label>Tahun (opsional)</label><input type="number" id="edit-source-year"></div>
+                    <div class="form-group"><label>Tahun (opsional)</label><input type="number" id="edit-source-year">
+                    </div>
                 </div>
                 <div class="form-group"><label>Keterangan</label><textarea id="edit-source-desc"></textarea></div>
             </div>
             <div class="modal-footer"><button class="btn btn-outline"
                     onclick="closeModal('modal-edit-source')">Batal</button><button class="btn btn-primary"
                     onclick="saveEditedSource()">Update</button></div>
+        </div>
+    </div>
+
+    <!-- MODAL SETOR RKD -->
+    <div id="modal-setor-rkd" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Setor Sisa Non-APBDes ke RKD</h2>
+                <button class="close-btn" onclick="closeModal('modal-setor-rkd')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+                    Pindahkan sebagian atau seluruh sisa saldo Non-APBDes ke Rekening Kas Desa (RKD) sebagai pendapatan APBDes resmi pada tanggal tertentu.
+                </p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tanggal Setoran</label>
+                        <input type="date" id="setor-rkd-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Jumlah Setoran (Rp)</label>
+                        <div class="input-prefix">
+                            <span>Rp</span>
+                            <input type="number" id="setor-rkd-amount" placeholder="0.00" step="0.01" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Masuk ke Sumber Dana APBDes</label>
+                    <select id="setor-rkd-category" required>
+                        <option value="">-- Pilih Sumber Dana --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Keterangan Setoran</label>
+                    <textarea id="setor-rkd-desc" placeholder="Contoh: Penyetoran sisa dana swadaya ke kas desa"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('modal-setor-rkd')">Batal</button>
+                <button class="btn btn-primary" onclick="prosesSetorRKD()">Proses Setoran</button>
+            </div>
         </div>
     </div>
 

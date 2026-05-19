@@ -32,6 +32,7 @@ let state = {
     { name: 'Penerimaan Transfer', type: 'pemasukan' }, { name: 'Penerimaan PAD', type: 'pemasukan' },
     { name: 'Penerimaan Lainnya', type: 'pemasukan' },
   ],
+  references: ['DD Earmark', 'DD NonEarmark', 'ADD Siltap', 'ADD Operasional', 'PAD', 'DLL', 'BHPR', 'Non-APBDes'],
   settings: { saldo_lalu: 0 },
   config: { NAMA_KANTOR: 'Kantor Desa Patihan', BATAS_APPROVAL: 5000000 },
   env: { active: 'PROD', name: 'Production' }
@@ -249,13 +250,27 @@ async function testConnection() {
   } catch (e) { showToast('Gagal: ' + e.message, 'error'); }
 }
 
+function standardizeCategory(cat) {
+  if (!cat) return '';
+  const clean = String(cat).trim();
+  const matched = (state.references || []).find(ref => matchCategory(clean, ref));
+  return matched || clean;
+}
+
 // ─── UPDATE UI ─────────────────────────────────────────────────
 function updateUI() {
+  // Standardize transaction categories in-memory to prevent duplicate categories like [PAD] PAD vs PAD
+  if (state.transactions && state.references) {
+    state.transactions.forEach(t => {
+      t.category = standardizeCategory(t.category);
+    });
+  }
+
   updateStats(); renderRecentTransactions(); renderFullTransactions();
   renderBudgets(); renderApprovals(); renderMiniApprovals();
   updateReportUI(); renderRKD(); populateDropdowns(); populateReferenceDropdowns();
 
-  renderSettingsSources(); initCharts();
+  renderSettingsSources(); renderSettingsReferences(); renderNonApbdesPage(); initCharts();
 
   updateEnvUI();
   updateSettingsUI();
@@ -432,7 +447,7 @@ function updateStats() {
     ? totalSourcesInit + Number(state.settings?.saldo_lalu || 0)
     : 0;
 
-  const trx = getActiveTrx(); // Filter berdasarkan tahun anggaran aktif
+  const trx = getActiveApbdesTrx(); // Filter berdasarkan tahun anggaran aktif (hanya APBDes)
   const inc = trx.filter(t => isPemasukan(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
   const exp = trx.filter(t => isPengeluaran(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
   const pend = trx.filter(t => (t.status || '').trim().toLowerCase() === 'pending').length;
@@ -450,7 +465,7 @@ function updateStats() {
 
 function renderRecentTransactions() {
   const el = document.getElementById('recent-transactions-list'); if (!el) return; el.innerHTML = '';
-  const sorted = [...getActiveTrx()].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sorted = [...getActiveApbdesTrx()].sort((a, b) => new Date(b.date) - new Date(a.date));
   if (!sorted.length) { el.innerHTML = '<tr><td colspan="5" class="empty-state"><p>Belum ada transaksi di tahun ' + getActiveYear() + '</p></td></tr>'; return; }
   sorted.slice(0, 5).forEach(t => {
     const r = document.createElement('tr');
@@ -461,7 +476,7 @@ function renderRecentTransactions() {
 
 function renderFullTransactions() {
   const el = document.getElementById('full-transactions-list'); if (!el) return; el.innerHTML = '';
-  const sorted = [...getActiveTrx()].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sorted = [...getActiveApbdesTrx()].sort((a, b) => new Date(b.date) - new Date(a.date));
   if (!sorted.length) { el.innerHTML = '<tr><td colspan="8" class="empty-state"><p>Belum ada transaksi di tahun ' + getActiveYear() + '</p></td></tr>'; return; }
   sorted.forEach(t => {
     const r = document.createElement('tr');
@@ -479,7 +494,7 @@ function renderBudgets() {
   elSilpa.innerHTML = ''; elCurrent.innerHTML = '';
 
   // --- 1. Anggaran Tahun Berjalan (Berdasarkan Sheet Referensi) ---
-  const activeTrx = getActiveTrx();
+  const activeTrx = getActiveApbdesTrx();
   (state.references || []).forEach(refLabel => {
     // Cari apakah ada deskripsi di state.sources yang cocok untuk tahun aktif atau global
     const matchYr = (state.sources || []).find(s => (`[${s.type}] ${s.name}` === refLabel || s.name === refLabel) && String(s.year || '') === getActiveYear());
@@ -574,7 +589,7 @@ function renderMiniApprovals() {
 
 function updateReportUI() {
   const isPerubahan = (state.settings?.APBDes || 'Awal') === 'Perubahan';
-  const trx = getActiveTrx();
+  const trx = getActiveApbdesTrx();
   const yr = getActiveYear();
 
   // Hitung initial balance total yang cocok dengan tahun aktif (prioritas tahun aktif, fallback ke global)
@@ -599,21 +614,13 @@ function updateReportUI() {
 
   const el = document.getElementById('report-category-list'); if (!el) return; el.innerHTML = '';
 
-  const baselineCategories = [
-    '[DD] Earmark',
-    '[DD] NonEarmark',
-    '[ADD] Siltap',
-    '[ADD] Operasional',
-    '[PAD] PAD',
-    '[BHPR] BHPR',
-    '[DLL] DLL'
-  ];
+  const baselineCategories = (state.references || []).filter(r => r !== 'Non-APBDes');
 
   // Dapatkan seluruh rincian kategori/sumber dana unik secara dinamis dari transaksi tahun berjalan DAN master sumber dana
   const trxCategories = [...new Set([
     ...baselineCategories,
-    ...uniqueCategories,
-    ...trx.map(t => t.category).filter(Boolean)
+    ...uniqueCategories.map(c => standardizeCategory(c)),
+    ...trx.map(t => standardizeCategory(t.category)).filter(Boolean)
   ])];
 
   if (trxCategories.length === 0) {
@@ -657,7 +664,7 @@ async function sendToSilpa(cat, finalBalance) {
   const nextYear = Number(yr) + 1;
 
   // Hitung saldo akhir secara akurat untuk semua kategori terkait demi menjamin sifat IDEMPOTEN (tidak terjadi penjumlahan berulang saat diklik berkali-kali)
-  const trx = getActiveTrx();
+  const trx = getActiveApbdesTrx();
   const beforeTrx = (state.transactions || []).filter(t => {
     const tYear = getYearFromDateString(t.date);
     return tYear && Number(tYear) < Number(yr) && isApproved(t);
@@ -776,7 +783,7 @@ function renderRKD() {
   const monthFilter = document.getElementById('rkd-month-filter')?.value || 'all';
 
   // Filter hanya transaksi via bank (Transfer) yang sudah approved
-  const bankTrxAll = [...getActiveTrx()]
+  const bankTrxAll = [...getActiveApbdesTrx()]
     .filter(t => (t.payMethod || '').trim().toLowerCase() === 'transfer' && isApproved(t))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -875,7 +882,7 @@ async function saveTransaction() {
     subCategory: '',
     amount: parseFloat(document.getElementById('trx-amount').value),
     desc: document.getElementById('trx-desc').value,
-    payMethod: 'Transfer',
+    payMethod: document.getElementById('trx-pay-method')?.value || 'Transfer',
     notes: document.getElementById('trx-notes')?.value || '',
     user: document.getElementById('user-name')?.innerText.toLowerCase() || 'web'
   };
@@ -960,6 +967,42 @@ async function processApproval(id, status) {
 }
 
 async function confirmDelete(id) {
+  const trx = state.transactions.find(t => t.id === id);
+  if (!trx) return;
+
+  const notes = trx.notes || '';
+  if (notes.startsWith('LINKED_SETOR_RKD:')) {
+    const linkId = notes.split(':')[1];
+    const linkedTrxs = state.transactions.filter(t => (t.notes || '').startsWith('LINKED_SETOR_RKD:' + linkId));
+    
+    const confirmMsg = `Transaksi ini merupakan bagian dari setoran sisa Non-APBDes ke RKD.\nMenghapus transaksi ini akan secara otomatis MENGHAPUS kedua pasangan transaksinya:\n` + 
+                       `- Pengeluaran Non-APBDes\n- Pemasukan APBDes\nAgar pembukuan Anda tetap seimbang.\n\nApakah Anda yakin ingin melanjutkan?`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    showLoading(true);
+    try {
+      const idsToDelete = linkedTrxs.map(t => t.id);
+      state.transactions = state.transactions.filter(t => !idsToDelete.includes(t.id));
+      localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(state));
+      updateUI();
+
+      if (gasUrl) {
+        for (const tid of idsToDelete) {
+          await postToGAS({ action: 'deleteTransaction', id: tid });
+        }
+        showToast('Kedua transaksi setoran berhasil dihapus!', 'success');
+      } else {
+        showToast('Kedua transaksi setoran dihapus (lokal)', 'success');
+      }
+    } catch (e) {
+      showToast('Gagal menghapus: ' + e.message, 'error');
+    } finally {
+      showLoading(false);
+    }
+    return;
+  }
+
   if (!confirm('Hapus transaksi ' + id + '?')) return;
 
   // Optimistic UI Update
@@ -1262,6 +1305,101 @@ function populateReferenceDropdowns() {
   });
 }
 
+function renderSettingsReferences() {
+  const el = document.getElementById('set-ref-list');
+  if (!el) return;
+  el.innerHTML = '';
+  
+  const refs = state.references || [];
+  if (refs.length === 0) {
+    el.innerHTML = '<span style="font-size:0.8rem;color:var(--text-muted)">Belum ada referensi sumber dana.</span>';
+    return;
+  }
+  
+  refs.forEach(ref => {
+    const tag = document.createElement('div');
+    tag.style.cssText = 'background:var(--primary-light);color:var(--primary);padding:0.3rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:700;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--primary-glow);';
+    tag.innerHTML = `
+      <span>${ref}</span>
+      <button onclick="deleteCustomReferensi('${ref}')" style="background:transparent;border:none;color:var(--primary);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;font-size:0.95rem;line-height:1;" title="Hapus kategori">
+        <i data-lucide="x" style="width:12px;height:12px"></i>
+      </button>
+    `;
+    el.appendChild(tag);
+  });
+  lucide.createIcons();
+}
+
+async function addCustomReferensi() {
+  const nameInput = document.getElementById('set-ref-name');
+  if (!nameInput) return;
+  const name = nameInput.value.trim();
+  if (!name) { showToast('Nama kategori tidak boleh kosong!', 'error'); return; }
+  
+  if ((state.references || []).includes(name)) {
+    showToast('Kategori tersebut sudah ada!', 'error');
+    return;
+  }
+  
+  // Optimistic UI
+  if (!state.references) state.references = [];
+  state.references.push(name);
+  const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
+  localStorage.setItem(envKey, JSON.stringify(state));
+  updateUI();
+  nameInput.value = '';
+  
+  if (gasUrl) {
+    showLoading(true);
+    try {
+      const res = await postToGAS({ action: 'saveReferensi', name });
+      if (res?.success) {
+        showToast('Kategori referensi berhasil ditambahkan!', 'success');
+        await fetchFromGAS();
+      } else {
+        throw new Error(res?.message || 'Gagal menyimpan ke server');
+      }
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+    showLoading(false);
+  } else {
+    showToast('Kategori referensi ditambahkan (lokal)', 'success');
+  }
+}
+
+async function deleteCustomReferensi(name) {
+  if (['DD Earmark','DD NonEarmark','ADD Siltap','ADD Operasional','PAD','DLL','BHPR'].includes(name)) {
+    if (!confirm(`Kategori "${name}" adalah kategori sistem bawaan.\nApakah Anda benar-benar yakin ingin menghapusnya? Tindakan ini bisa merusak konsistensi data default.`)) return;
+  } else {
+    if (!confirm(`Hapus kategori utama "${name}"?`)) return;
+  }
+  
+  // Optimistic UI
+  state.references = (state.references || []).filter(r => r !== name);
+  const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
+  localStorage.setItem(envKey, JSON.stringify(state));
+  updateUI();
+  
+  if (gasUrl) {
+    showLoading(true);
+    try {
+      const res = await postToGAS({ action: 'deleteReferensi', name });
+      if (res?.success) {
+        showToast('Kategori referensi berhasil dihapus!', 'success');
+        await fetchFromGAS();
+      } else {
+        throw new Error(res?.message || 'Gagal menghapus di server');
+      }
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+    showLoading(false);
+  } else {
+    showToast('Kategori referensi dihapus (lokal)', 'success');
+  }
+}
+
 function populateDropdowns() {
 
   const s1 = document.getElementById('trx-category');
@@ -1293,9 +1431,15 @@ function closeModal(id) {
 function resetFormTransaksi() {
   document.getElementById('trx-type').value = 'pengeluaran';
   document.getElementById('trx-date').value = '';
-  document.getElementById('trx-category').value = '';
+  const cat = document.getElementById('trx-category');
+  if (cat) {
+    cat.value = '';
+    cat.disabled = false;
+  }
   document.getElementById('trx-amount').value = '';
   document.getElementById('trx-desc').value = '';
+  const pm = document.getElementById('trx-pay-method');
+  if (pm) pm.value = 'Transfer';
   const notes = document.getElementById('trx-notes');
   if (notes) notes.value = '';
 }
@@ -1327,7 +1471,7 @@ function handleSearch(val) {
 function initCharts() {
   const c1 = document.getElementById('cashflowChart'); if (!c1) return;
   if (cashflowChart) cashflowChart.destroy(); if (categoryChart) categoryChart.destroy();
-  const activeTrx = getActiveTrx();
+  const activeTrx = getActiveApbdesTrx();
   const dates = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); dates.push(d.toISOString().split('T')[0]); }
   const iD = dates.map(d => activeTrx.filter(t => (t.date || '').includes(d) && t.type === 'pemasukan' && t.status === 'approved').reduce((s, t) => s + (t.amount || 0), 0));
   const eD = dates.map(d => activeTrx.filter(t => (t.date || '').includes(d) && t.type === 'pengeluaran' && t.status === 'approved').reduce((s, t) => s + (t.amount || 0), 0));
@@ -1366,6 +1510,204 @@ function isApproved(t) {
 }
 function isPemasukan(t) { return (t.type || '').trim().toLowerCase() === 'pemasukan'; }
 function isPengeluaran(t) { return (t.type || '').trim().toLowerCase() === 'pengeluaran'; }
+
+function isNonApbdesTrx(t) {
+  if (!t || !t.category) return false;
+  const cat = String(t.category).trim().toLowerCase();
+  return cat.includes('non-apbdes') || cat.includes('non apbdes');
+}
+
+function getActiveApbdesTrx() {
+  return getActiveTrx().filter(t => !isNonApbdesTrx(t));
+}
+
+function openModalNonApbdes() {
+  openModal('modal-transaksi');
+  const catSelect = document.getElementById('trx-category');
+  if (catSelect) {
+    catSelect.value = 'Non-APBDes';
+    // If Non-APBDes isn't in references, add it on the fly
+    if (catSelect.value !== 'Non-APBDes') {
+      const opt = document.createElement('option');
+      opt.value = 'Non-APBDes';
+      opt.text = 'Non-APBDes';
+      catSelect.add(opt);
+      catSelect.value = 'Non-APBDes';
+    }
+    catSelect.disabled = true; // lock it
+  }
+}
+
+function openModalSetorRKD() {
+  const trx = getActiveTrx().filter(isNonApbdesTrx);
+  const inc = trx.filter(t => isPemasukan(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
+  const exp = trx.filter(t => isPengeluaran(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
+  const saldo = inc - exp;
+
+  if (saldo <= 0) {
+    showToast('Tidak ada sisa saldo Non-APBDes untuk disetor ke RKD.', 'error');
+    return;
+  }
+
+  // Populate APBDes Category
+  const catSelect = document.getElementById('setor-rkd-category');
+  if (catSelect) {
+    catSelect.innerHTML = '<option value="">-- Pilih Sumber Dana APBDes --</option>';
+    let hasPAD = false;
+    (state.references || []).filter(r => r !== 'Non-APBDes').forEach(ref => {
+      const opt = document.createElement('option');
+      opt.value = ref;
+      opt.text = ref;
+      catSelect.add(opt);
+      if (ref === 'PAD') hasPAD = true;
+    });
+    if (hasPAD) {
+      catSelect.value = 'PAD';
+    }
+  }
+
+  document.getElementById('setor-rkd-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('setor-rkd-amount').value = saldo;
+  document.getElementById('setor-rkd-amount').dataset.max = saldo;
+  document.getElementById('setor-rkd-desc').value = 'Setoran sisa Non-APBDes ke RKD';
+  
+  openModal('modal-setor-rkd');
+}
+
+async function prosesSetorRKD() {
+  const date = document.getElementById('setor-rkd-date').value;
+  const amount = Number(document.getElementById('setor-rkd-amount').value || 0);
+  const maxAvailable = Number(document.getElementById('setor-rkd-amount').dataset.max || 0);
+  const categoryTo = document.getElementById('setor-rkd-category').value;
+  const desc = document.getElementById('setor-rkd-desc').value.trim();
+
+  if (!date) {
+    showToast('Pilih tanggal setoran terlebih dahulu.', 'error');
+    return;
+  }
+  if (!categoryTo) {
+    showToast('Pilih sumber dana tujuan RKD terlebih dahulu.', 'error');
+    return;
+  }
+  if (amount <= 0) {
+    showToast('Jumlah setor tidak valid.', 'error');
+    return;
+  }
+  if (amount > maxAvailable) {
+    showToast(`Jumlah setoran melebihi saldo tersedia (${formatIDR(maxAvailable)}).`, 'error');
+    return;
+  }
+
+  const confirmMsg = `Anda akan mentransfer sisa Non-APBDes sebesar ${formatIDR(amount)} pada tanggal ${fmtDate(date)} masuk ke RKD (${categoryTo}). Lanjutkan?`;
+  if (!confirm(confirmMsg)) return;
+
+  const linkId = 'SETOR-' + Date.now();
+  const activeUser = document.getElementById('user-name')?.innerText.toLowerCase() || 'admin';
+
+  // Transaksi 1: Pengeluaran dari Non-APBDes
+  const t1 = {
+    id: 'TRXN-' + Date.now() + '-OUT',
+    date: date,
+    type: 'pengeluaran',
+    category: 'Non-APBDes',
+    desc: desc + ' (Keluar)',
+    amount: amount,
+    payMethod: 'Transfer',
+    status: 'approved',
+    user: activeUser,
+    notes: 'LINKED_SETOR_RKD:' + linkId
+  };
+
+  // Transaksi 2: Pemasukan ke APBDes
+  const t2 = {
+    id: 'TRX-' + (Date.now() + 1) + '-IN',
+    date: date,
+    type: 'pemasukan',
+    category: categoryTo,
+    desc: desc + ' (Masuk dari Non-APBDes)',
+    amount: amount,
+    payMethod: 'Transfer',
+    status: 'approved',
+    user: activeUser,
+    notes: 'LINKED_SETOR_RKD:' + linkId
+  };
+
+  try {
+    showLoading(true);
+    // Save to local state optimistically
+    state.transactions.push(t1, t2);
+    localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(state));
+    updateUI();
+
+    // Send to server
+    if (gasUrl) {
+      // Send OUT
+      const res1 = await postToGAS({
+        action: 'saveTransaction',
+        data: t1
+      });
+      // Send IN
+      const res2 = await postToGAS({
+        action: 'saveTransaction',
+        data: t2
+      });
+
+      if (res1?.success && res2?.success) {
+        showToast('Berhasil setor sisa Non-APBDes ke RKD.', 'success');
+        await fetchFromGAS(); // refresh proper IDs from server
+      } else {
+        throw new Error('Gagal mencatat transaksi di server.');
+      }
+    } else {
+      addToSyncQueue({ action: 'saveTransaction', data: t1 });
+      addToSyncQueue({ action: 'saveTransaction', data: t2 });
+      showToast('Setor berhasil disimpan secara offline.', 'success');
+    }
+  } catch (err) {
+    showToast('Terjadi kesalahan: ' + err.message, 'error');
+  } finally {
+    showLoading(false);
+    closeModal('modal-setor-rkd');
+  }
+}
+
+function renderNonApbdesPage() {
+  const el = document.getElementById('non-apbdes-list');
+  if (!el) return;
+  el.innerHTML = '';
+  
+  const trx = getActiveTrx().filter(isNonApbdesTrx);
+  
+  // Calculate Stats
+  const inc = trx.filter(t => isPemasukan(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
+  const exp = trx.filter(t => isPengeluaran(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
+  const bal = inc - exp;
+  
+  setText('stat-non-income', formatIDR(inc));
+  setText('stat-non-expense', formatIDR(exp));
+  setText('stat-non-balance', formatIDR(bal));
+  
+  if (!trx.length) {
+    el.innerHTML = '<tr><td colspan="8" class="empty-state"><p>Belum ada transaksi Non-APBDes di tahun ' + getActiveYear() + '</p></td></tr>';
+    return;
+  }
+  
+  trx.forEach(t => {
+    const r = document.createElement('tr');
+    r.innerHTML = `
+      <td><code style="font-size:0.7rem;background:#f1f5f9;padding:2px 5px;border-radius:4px">${t.id}</code></td>
+      <td>${fmtDate(t.date)}</td>
+      <td><span class="status-badge status-${t.type === 'pemasukan' ? 'approved' : 'rejected'}" style="font-size:0.6rem">${t.type === 'pemasukan' ? 'MASUK' : 'KELUAR'}</span></td>
+      <td><span style="font-size:0.75rem;font-weight:600;color:var(--primary)">${t.category || '-'}</span></td>
+      <td>${t.desc}</td>
+      <td style="font-weight:700;color:${t.type === 'pemasukan' ? 'var(--success)' : 'var(--danger)'}">${t.type === 'pemasukan' ? '+' : '-'} ${formatIDR(t.amount)}</td>
+      <td><span class="status-badge status-approved" style="font-size:0.65rem">${t.payMethod || 'Transfer'}</span></td>
+      <td><button class="btn btn-outline btn-sm" onclick="confirmDelete('${t.id}')"><i data-lucide="trash-2" style="width:13px;height:13px"></i></button></td>
+    `;
+    el.appendChild(r);
+  });
+  lucide.createIcons();
+}
 
 async function runDiagnosis() {
   // --- Diagnosa dari state di memori browser (tidak butuh GAS) ---

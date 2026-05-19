@@ -67,8 +67,10 @@ function doPost(e) {
       case 'saveSumberDana': result = saveSumberDana(body.type, body.name, body.initialBalance, body.description, body.year); break;
       case 'deleteSumberDana': result = deleteSumberDana(body.type, body.name, body.year); break;
       case 'editSumberDana': result = editSumberDana(body.oldType, body.oldName, body.oldYear, body.newType, body.newName, body.newYear, body.initialBalance, body.description); break;
-      case 'saveKategori': result = saveKategori(body.name, body.type, body.description); break;
+       case 'saveKategori': result = saveKategori(body.name, body.type, body.description); break;
       case 'deleteKategori': result = deleteKategori(body.name); break;
+      case 'saveReferensi': result = saveReferensi(body.name); break;
+      case 'deleteReferensi': result = deleteReferensi(body.name); break;
       case 'updateSettings': result = updateSettings(body.key, body.value); break;
       case 'resetDatabase': result = resetDatabase(); break;
       default: result = { error: 'Unknown action: ' + action };
@@ -117,6 +119,7 @@ function initDatabase() {
   const ss = getSpreadsheet_();
   const schemas = [
     { name: 'Transaksi', headers: ['ID','Tanggal','Tipe','Sumber Dana','Kategori','Deskripsi','Jumlah','Metode Bayar','Status','Catatan','User','Timestamp'] },
+    { name: 'Transaksi_Non_APBDes', headers: ['ID','Tanggal','Tipe','Sumber Dana','Kategori','Deskripsi','Jumlah','Metode Bayar','Status','Catatan','User','Timestamp'] },
 
     { name: 'Silpa', headers: ['Sumber Dana','Nama','Saldo Awal','Keterangan','Status Aktif','Tahun'] },
 
@@ -147,7 +150,7 @@ function initDatabase() {
   // Default Referensi
   const refSheet = ss.getSheetByName('Referensi');
   if (refSheet.getLastRow() <= 1) {
-    ['DD Earmark','DD NonEarmark','ADD Siltap','ADD Operasional','PAD','DLL','BHPR'].forEach(t => refSheet.appendRow([t]));
+    ['DD Earmark','DD NonEarmark','ADD Siltap','ADD Operasional','PAD','DLL','BHPR','Non-APBDes'].forEach(t => refSheet.appendRow([t]));
   }
 
   // Tambah validasi data: kolom Sumber Dana di sheet Silpa harus dari sheet Referensi
@@ -171,34 +174,17 @@ function getAllData() {
   const ss = getSpreadsheet_();
   
   const trxSheet = ss.getSheetByName('Transaksi');
-  let transactions = [];
-  if (trxSheet) {
-    const lastRow = trxSheet.getLastRow();
-    let trxData = [];
-    if (lastRow > 1) trxData = trxSheet.getRange(2,1,lastRow-1,12).getValues();
-    transactions = trxData.map(r => {
-      // Normalisasi amount: hapus format mata uang, parse ke angka
-      const rawAmount = r[6];
-      const amount = typeof rawAmount === 'number'
-        ? rawAmount
-        : Number(String(rawAmount).replace(/[^0-9,.-]/g, '').replace(',', '.')) || 0;
-
-      return {
-        id:       String(r[0] || '').trim(),
-        date:     r[1] instanceof Date ? Utilities.formatDate(r[1], CONFIG.TIMEZONE, "yyyy-MM-dd") : String(r[1] || '').trim(),
-        type:     String(r[2] || '').trim().toLowerCase(),
-        category: String(r[3] || '').trim(),
-        subCategory: String(r[4] || '').trim(),
-        desc:     String(r[5] || '').trim(),
-        amount:   amount,
-        payMethod: String(r[7] || '').trim(),
-        status:   String(r[8] || '').trim().toLowerCase(),
-        notes:    String(r[9] || '').trim(),
-        user:     String(r[10] || '').trim(),
-        timestamp: r[11]
-      };
-    }).reverse();
-  }
+  const trxNonSheet = ss.getSheetByName('Transaksi_Non_APBDes');
+  
+  const transactions = [
+    ..._readTransactionsFromSheet_(trxSheet),
+    ..._readTransactionsFromSheet_(trxNonSheet)
+  ].sort((a, b) => {
+    const dateA = new Date(a.date);
+    const dateB = new Date(b.date);
+    if (dateA - dateB !== 0) return dateB - dateA;
+    return new Date(b.timestamp) - new Date(a.timestamp);
+  });
 
   const srcSheet = ss.getSheetByName('Silpa');
   let sources = [];
@@ -250,46 +236,109 @@ function getAllData() {
 // ─── TRANSACTION CRUD ──────────────────────────────────────────
 function saveTransactionToSheet(data) {
   const ss = getSpreadsheet_();
-  const sheet = ss.getSheetByName('Transaksi');
-  const id = 'TRX-' + Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyyMMddHHmmss") + '-' + Math.floor(Math.random()*1000);
+  const isNon = String(data.category).toLowerCase().includes('non-apbdes') || String(data.category).toLowerCase().includes('non apbdes');
+  const sheetName = isNon ? 'Transaksi_Non_APBDes' : 'Transaksi';
+  const sheet = ss.getSheetByName(sheetName);
+  
+  const id = (isNon ? 'TRXN-' : 'TRX-') + Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyyMMddHHmmss") + '-' + Math.floor(Math.random()*1000);
   
   // Jika user admin, matikan approval (selalu approved)
   let status = 'approved';
-  if (data.user !== 'admin') {
+  if (String(data.user).toLowerCase() !== 'admin') {
      status = (data.type === 'pengeluaran' && data.amount >= CONFIG.BATAS_APPROVAL) ? 'pending' : 'approved';
   }
   
   sheet.appendRow([id, data.date, data.type, data.category, data.subCategory||'', data.desc, data.amount, data.payMethod||'Transfer', status, data.notes||'', data.user||'web', new Date()]);
-  _logActivity(data.user||'web', 'CREATE', 'Silpa baru: '+id);
+  _logActivity(data.user||'web', 'CREATE', (isNon ? 'Transaksi Non-APBDes: ' : 'Transaksi APBDes: ')+id);
 
   return { success:true, id, status };
 }
 
+function _readTransactionsFromSheet_(sheet) {
+  if (!sheet) return [];
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  const data = sheet.getRange(2,1,lastRow-1,12).getValues();
+  return data.map(r => {
+    const rawAmount = r[6];
+    const amount = typeof rawAmount === 'number'
+      ? rawAmount
+      : Number(String(rawAmount).replace(/[^0-9,.-]/g, '').replace(',', '.')) || 0;
+
+    return {
+      id:       String(r[0] || '').trim(),
+      date:     r[1] instanceof Date ? Utilities.formatDate(r[1], CONFIG.TIMEZONE, "yyyy-MM-dd") : String(r[1] || '').trim(),
+      type:     String(r[2] || '').trim().toLowerCase(),
+      category: String(r[3] || '').trim(),
+      subCategory: String(r[4] || '').trim(),
+      desc:     String(r[5] || '').trim(),
+      amount:   amount,
+      payMethod: String(r[7] || '').trim(),
+      status:   String(r[8] || '').trim().toLowerCase(),
+      notes:    String(r[9] || '').trim(),
+      user:     String(r[10] || '').trim(),
+      timestamp: r[11]
+    };
+  });
+}
+
 function updateTransaction(id, data) {
-  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Transaksi'); const all = sheet.getDataRange().getValues();
+  const ss = getSpreadsheet_();
+  let ok = _updateTransactionInSheet_(ss, 'Transaksi', id, data);
+  if (!ok) ok = _updateTransactionInSheet_(ss, 'Transaksi_Non_APBDes', id, data);
+  if (ok) return { success: true };
+  return { success:false, message:'ID tidak ditemukan' };
+}
+
+function _updateTransactionInSheet_(ss, sheetName, id, data) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return false;
+  const all = sheet.getDataRange().getValues();
   for (let i=1;i<all.length;i++) {
-    if (all[i][0]===id) {
+    if (String(all[i][0]).trim() === id) {
       if(data.date) sheet.getRange(i+1,2).setValue(data.date);
       if(data.type) sheet.getRange(i+1,3).setValue(data.type);
       if(data.category) sheet.getRange(i+1,4).setValue(data.category);
       if(data.desc) sheet.getRange(i+1,6).setValue(data.desc);
       if(data.amount) sheet.getRange(i+1,7).setValue(data.amount);
       if(data.payMethod) sheet.getRange(i+1,8).setValue(data.payMethod);
-      return { success:true };
+      return true;
+    }
+  }
+  return false;
+}
+
+function deleteTransaction(id) {
+  const ss = getSpreadsheet_();
+  const sheets = ['Transaksi', 'Transaksi_Non_APBDes'];
+  for (const name of sheets) {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) continue;
+    const data = sheet.getDataRange().getValues();
+    for (let i=1;i<data.length;i++) {
+      if (String(data[i][0]).trim() === id) {
+        sheet.deleteRow(i+1);
+        return { success:true };
+      }
     }
   }
   return { success:false, message:'ID tidak ditemukan' };
 }
 
-function deleteTransaction(id) {
-  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Transaksi'); const data = sheet.getDataRange().getValues();
-  for (let i=1;i<data.length;i++) { if(data[i][0]===id) { sheet.deleteRow(i+1); return { success:true }; } }
-  return { success:false, message:'ID tidak ditemukan' };
-}
-
 function updateApprovalStatus(id, status) {
-  const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Transaksi'); const data = sheet.getDataRange().getValues();
-  for (let i=1;i<data.length;i++) { if(data[i][0]===id) { sheet.getRange(i+1,9).setValue(status); return { success:true }; } }
+  const ss = getSpreadsheet_();
+  const sheets = ['Transaksi', 'Transaksi_Non_APBDes'];
+  for (const name of sheets) {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) continue;
+    const data = sheet.getDataRange().getValues();
+    for (let i=1;i<data.length;i++) {
+      if (String(data[i][0]).trim() === id) {
+        sheet.getRange(i+1,9).setValue(status);
+        return { success:true };
+      }
+    }
+  }
   return { success:false, message:'ID tidak ditemukan' };
 }
 
@@ -363,6 +412,63 @@ function _cascadeUpdateSource(oldLabel, newLabel) {
 function saveKategori(name, type, description) { return { success: false }; }
 function deleteKategori(name) { return { success: false }; }
 
+function saveReferensi(name) {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName('Referensi');
+  if (!sheet) return { success: false, message: 'Sheet Referensi tidak ditemukan' };
+  
+  const data = sheet.getDataRange().getValues().flat();
+  const cleanName = String(name).trim();
+  if (data.includes(cleanName)) {
+    return { success: false, message: 'Referensi sudah ada!' };
+  }
+  
+  sheet.appendRow([cleanName]);
+  
+  // Re-run validation rules
+  const silpaSheet = ss.getSheetByName('Silpa');
+  if (silpaSheet) {
+    const refRange = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 7), 1);
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(refRange, true)
+      .setAllowInvalid(false)
+      .setHelpText('Pilih Sumber Dana dari daftar Referensi')
+      .build();
+    silpaSheet.getRange(2, 1, 1000, 1).setDataValidation(rule);
+  }
+  
+  return { success: true };
+}
+
+function deleteReferensi(name) {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName('Referensi');
+  if (!sheet) return { success: false, message: 'Sheet Referensi tidak ditemukan' };
+  
+  const cleanName = String(name).trim();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === cleanName) {
+      sheet.deleteRow(i + 1);
+      
+      // Re-run validation
+      const silpaSheet = ss.getSheetByName('Silpa');
+      if (silpaSheet) {
+        const refRange = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 7), 1);
+        const rule = SpreadsheetApp.newDataValidation()
+          .requireValueInRange(refRange, true)
+          .setAllowInvalid(false)
+          .setHelpText('Pilih Sumber Dana dari daftar Referensi')
+          .build();
+        silpaSheet.getRange(2, 1, 1000, 1).setDataValidation(rule);
+      }
+      
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Referensi tidak ditemukan' };
+}
+
 function updateSettings(key, value) {
   const ss = getSpreadsheet_(); const sheet = ss.getSheetByName('Settings'); const data = sheet.getDataRange().getValues();
   for (let i=1;i<data.length;i++) { if(data[i][0]===key) { sheet.getRange(i+1,2).setValue(value); return { success:true }; } }
@@ -385,7 +491,7 @@ function _logActivity(user, action, detail) {
 }
 function resetDatabase() {
   const ss = getSpreadsheet_();
-  const sheetsToClear = ['Transaksi', 'Silpa', 'Log_Aktivitas'];
+  const sheetsToClear = ['Transaksi', 'Transaksi_Non_APBDes', 'Silpa', 'Log_Aktivitas'];
 
   
   sheetsToClear.forEach(name => {
