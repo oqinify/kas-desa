@@ -1,0 +1,11 @@
+# Excel/Office temporary and backup files
+*.xlsx.bak
+~$*.xlsx
+
+# Archive files
+*.zip
+laporan_unzip/
+
+# OS specific files
+.DS_Store
+Thumbs.db
