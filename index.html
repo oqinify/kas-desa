@@ -13,10 +13,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
         rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="styles.css">
     <meta name="theme-color" content="#6366f1">
-
+    <link rel="manifest" href="manifest.json">
 </head>
 
 <body>
@@ -37,7 +39,8 @@
             <div>
                 <span class="logo-text">Kas Desa</span>
                 <div id="tahun-badge" style="font-size:0.65rem;color:#94a3b8;margin-top:1px;letter-spacing:0.5px">TA
-                    <span id="sidebar-tahun">—</span> &bull; <span id="sidebar-apbdes">Awal</span></div>
+                    <span id="sidebar-tahun">—</span> &bull; <span id="sidebar-apbdes">Awal</span>
+                </div>
             </div>
         </div>
         <nav class="nav-menu">
@@ -67,6 +70,12 @@
             </ul>
         </nav>
         <div class="sidebar-footer">
+            <div id="pwa-install-container" style="display: none; padding: 0 0.5rem 0.75rem 0.5rem;">
+                <button id="pwa-install-btn" class="btn btn-primary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-md); background: linear-gradient(135deg,#6366f1,#818cf8); color: white; border: none; cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px rgba(99,102,241,0.2);">
+                    <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+                    <span>Instal Aplikasi</span>
+                </button>
+            </div>
             <div class="user-profile-mini" onclick="toggleUserRole()" style="cursor:pointer"
                 title="Klik untuk ganti user">
                 <div class="avatar" id="user-avatar">A</div>
@@ -164,7 +173,8 @@
                             <div class="card-header">
                                 <h3>Arus Kas 7 Hari</h3>
                             </div>
-                            <div style="height:240px"><canvas id="cashflowChart"></canvas></div>
+                            <div style="position:relative; height:240px; width:100%;"><canvas
+                                    id="cashflowChart"></canvas></div>
                         </div>
                         <div class="recent-list card">
                             <div class="card-header">
@@ -193,7 +203,9 @@
                         <div class="allocation-card card">
                             <div class="card-header">
                                 <h3>Alokasi Pengeluaran</h3>
-                            </div><canvas id="categoryChart"></canvas>
+                            </div>
+                            <div style="position:relative; height:240px; width:100%;"><canvas
+                                    id="categoryChart"></canvas></div>
                         </div>
                         <div class="quick-stats card">
                             <div class="card-header">
@@ -278,7 +290,7 @@
                 <div class="card">
                     <div class="card-header">
                         <h3>Daftar Transaksi Non-APBDes</h3>
-                        <div style="display: flex; gap: 0.5rem">
+                        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem">
                             <button class="btn btn-outline" onclick="openModalSetorRKD()"><i
                                     data-lucide="arrow-right-left" style="width:13px;height:13px"></i> Setor Sisa ke
                                 RKD</button>
@@ -339,10 +351,22 @@
 
             <!-- LAPORAN -->
             <div id="page-laporan" class="page-content" style="display:none">
-                <div class="page-header-title">
-                    <h2>Laporan Keuangan</h2>
-                    <p>Ringkasan keuangan per Silpa.</p>
-
+                <div class="page-header-title"
+                    style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                    <div>
+                        <h2>Laporan Keuangan</h2>
+                        <p>Ringkasan keuangan per Silpa.</p>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <button class="btn btn-outline"
+                            onclick="exportTableToExcel('table-laporan', 'Laporan_Keuangan_Per_Sumber_Dana')">
+                            <i data-lucide="download" style="width:14px;height:14px"></i> Export Excel
+                        </button>
+                        <button class="btn btn-primary" onclick="exportWithTemplate('lpj')"
+                            style="display:flex; align-items:center; gap:0.3rem">
+                            <i data-lucide="printer" style="width:14px;height:14px"></i> Cetak Format
+                        </button>
+                    </div>
                 </div>
                 <div class="report-summary-grid">
                     <div class="card">
@@ -383,7 +407,7 @@
                         <h3>Performa per Sumber Dana</h3>
                     </div>
                     <div class="table-responsive">
-                        <table>
+                        <table id="table-laporan">
                             <thead>
                                 <tr>
                                     <th>SUMBER DANA</th>
@@ -429,28 +453,37 @@
                     </div>
                 </div>
                 <div class="card">
-                    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div class="card-header">
                         <h3>Buku Kas Rekening Bank</h3>
-                        <select id="rkd-month-filter" class="form-control"
-                            style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; border-radius:6px;"
-                            onchange="renderRKD()">
-                            <option value="all">Semua Bulan</option>
-                            <option value="01">Januari</option>
-                            <option value="02">Februari</option>
-                            <option value="03">Maret</option>
-                            <option value="04">April</option>
-                            <option value="05">Mei</option>
-                            <option value="06">Juni</option>
-                            <option value="07">Juli</option>
-                            <option value="08">Agustus</option>
-                            <option value="09">September</option>
-                            <option value="10">Oktober</option>
-                            <option value="11">November</option>
-                            <option value="12">Desember</option>
-                        </select>
+                        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                            <select id="rkd-month-filter" class="form-control"
+                                style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; border-radius:6px;"
+                                onchange="renderRKD()">
+                                <option value="all">Semua Bulan</option>
+                                <option value="01">Januari</option>
+                                <option value="02">Februari</option>
+                                <option value="03">Maret</option>
+                                <option value="04">April</option>
+                                <option value="05">Mei</option>
+                                <option value="06">Juni</option>
+                                <option value="07">Juli</option>
+                                <option value="08">Agustus</option>
+                                <option value="09">September</option>
+                                <option value="10">Oktober</option>
+                                <option value="11">November</option>
+                                <option value="12">Desember</option>
+                            </select>
+                            <button class="btn btn-outline" onclick="exportTableToExcel('table-rkd', 'Buku_Kas_Bank')">
+                                <i data-lucide="download" style="width:14px;height:14px"></i> Export Excel
+                            </button>
+                            <button class="btn btn-primary" onclick="exportWithTemplate('bku')"
+                                style="display:flex; align-items:center; gap:0.3rem">
+                                <i data-lucide="printer" style="width:14px;height:14px"></i> Cetak Format
+                            </button>
+                        </div>
                     </div>
                     <div class="table-responsive">
-                        <table>
+                        <table id="table-rkd">
                             <thead>
                                 <tr>
                                     <th>NO</th>
@@ -687,7 +720,8 @@
             </div>
             <div class="modal-body">
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
-                    Pindahkan sebagian atau seluruh sisa saldo Non-APBDes ke Rekening Kas Desa (RKD) sebagai pendapatan APBDes resmi pada tanggal tertentu.
+                    Pindahkan sebagian atau seluruh sisa saldo Non-APBDes ke Rekening Kas Desa (RKD) sebagai pendapatan
+                    APBDes resmi pada tanggal tertentu.
                 </p>
                 <div class="form-row">
                     <div class="form-group">
@@ -710,7 +744,8 @@
                 </div>
                 <div class="form-group">
                     <label>Keterangan Setoran</label>
-                    <textarea id="setor-rkd-desc" placeholder="Contoh: Penyetoran sisa dana swadaya ke kas desa"></textarea>
+                    <textarea id="setor-rkd-desc"
+                        placeholder="Contoh: Penyetoran sisa dana swadaya ke kas desa"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
@@ -723,6 +758,49 @@
     <script src="app.js"></script>
     <script>
         lucide.createIcons();
+
+        // Register Service Worker for PWA installation support
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registered successfully:', reg.scope))
+                    .catch(err => console.error('Service Worker registration failed:', err));
+            });
+        }
+
+        // PWA Installation handling
+        let deferredPrompt;
+        const installContainer = document.getElementById('pwa-install-container');
+        const installBtn = document.getElementById('pwa-install-btn');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            if (installContainer) {
+                installContainer.style.display = 'block';
+            }
+        });
+
+        if (installBtn) {
+            installBtn.addEventListener('click', async () => {
+                if (!deferredPrompt) return;
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log(`User choice outcome: ${outcome}`);
+                deferredPrompt = null;
+                if (installContainer) {
+                    installContainer.style.display = 'none';
+                }
+            });
+        }
+
+        window.addEventListener('appinstalled', (event) => {
+            console.log('App installed successfully!', event);
+            deferredPrompt = null;
+            if (installContainer) {
+                installContainer.style.display = 'none';
+            }
+        });
     </script>
 </body>
 

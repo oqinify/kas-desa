@@ -205,11 +205,21 @@ body { background:var(--bg-app); color:var(--text-body); display:flex; min-heigh
   padding:1.35rem; margin-bottom:1rem; transition:var(--transition);
 }
 .card:hover { box-shadow:var(--shadow); }
-.card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
+.card-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
 .card-header h3 { font-size:0.95rem; font-weight:700; color:var(--text-title); }
 
 /* ─── TABLES ─── */
-.table-responsive { overflow-x:auto; }
+.table-responsive { overflow-x:auto; width: 100%; -webkit-overflow-scrolling: touch; }
+.table-responsive table { white-space: nowrap; }
+#rkd-list td:nth-child(3),
+#recent-transactions-list td:nth-child(3),
+#full-transactions-list td:nth-child(5),
+#non-apbdes-list td:nth-child(5) {
+  white-space: normal;
+  min-width: 150px;
+  max-width: 300px;
+  word-wrap: break-word;
+}
 table { width:100%; border-collapse:collapse; }
 th {
   text-align:left; padding:0.65rem 0.9rem; font-size:0.65rem; font-weight:700;

@@ -284,7 +284,7 @@ function updateSettingsUI() {
   const tahun = state.settings?.tahun_anggaran || state.config?.TAHUN_ANGGARAN || new Date().getFullYear();
   const tahunInput = document.getElementById('set-tahun');
   if (tahunInput) tahunInput.value = tahun;
-  
+
   const sidebarTahun = document.getElementById('sidebar-tahun');
   if (sidebarTahun) sidebarTahun.textContent = tahun;
 
@@ -974,10 +974,10 @@ async function confirmDelete(id) {
   if (notes.startsWith('LINKED_SETOR_RKD:')) {
     const linkId = notes.split(':')[1];
     const linkedTrxs = state.transactions.filter(t => (t.notes || '').startsWith('LINKED_SETOR_RKD:' + linkId));
-    
-    const confirmMsg = `Transaksi ini merupakan bagian dari setoran sisa Non-APBDes ke RKD.\nMenghapus transaksi ini akan secara otomatis MENGHAPUS kedua pasangan transaksinya:\n` + 
-                       `- Pengeluaran Non-APBDes\n- Pemasukan APBDes\nAgar pembukuan Anda tetap seimbang.\n\nApakah Anda yakin ingin melanjutkan?`;
-    
+
+    const confirmMsg = `Transaksi ini merupakan bagian dari setoran sisa Non-APBDes ke RKD.\nMenghapus transaksi ini akan secara otomatis MENGHAPUS kedua pasangan transaksinya:\n` +
+      `- Pengeluaran Non-APBDes\n- Pemasukan APBDes\nAgar pembukuan Anda tetap seimbang.\n\nApakah Anda yakin ingin melanjutkan?`;
+
     if (!confirm(confirmMsg)) return;
 
     showLoading(true);
@@ -1309,13 +1309,13 @@ function renderSettingsReferences() {
   const el = document.getElementById('set-ref-list');
   if (!el) return;
   el.innerHTML = '';
-  
+
   const refs = state.references || [];
   if (refs.length === 0) {
     el.innerHTML = '<span style="font-size:0.8rem;color:var(--text-muted)">Belum ada referensi sumber dana.</span>';
     return;
   }
-  
+
   refs.forEach(ref => {
     const tag = document.createElement('div');
     tag.style.cssText = 'background:var(--primary-light);color:var(--primary);padding:0.3rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:700;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--primary-glow);';
@@ -1335,12 +1335,12 @@ async function addCustomReferensi() {
   if (!nameInput) return;
   const name = nameInput.value.trim();
   if (!name) { showToast('Nama kategori tidak boleh kosong!', 'error'); return; }
-  
+
   if ((state.references || []).includes(name)) {
     showToast('Kategori tersebut sudah ada!', 'error');
     return;
   }
-  
+
   // Optimistic UI
   if (!state.references) state.references = [];
   state.references.push(name);
@@ -1348,7 +1348,7 @@ async function addCustomReferensi() {
   localStorage.setItem(envKey, JSON.stringify(state));
   updateUI();
   nameInput.value = '';
-  
+
   if (gasUrl) {
     showLoading(true);
     try {
@@ -1369,18 +1369,18 @@ async function addCustomReferensi() {
 }
 
 async function deleteCustomReferensi(name) {
-  if (['DD Earmark','DD NonEarmark','ADD Siltap','ADD Operasional','PAD','DLL','BHPR'].includes(name)) {
+  if (['DD Earmark', 'DD NonEarmark', 'ADD Siltap', 'ADD Operasional', 'PAD', 'DLL', 'BHPR'].includes(name)) {
     if (!confirm(`Kategori "${name}" adalah kategori sistem bawaan.\nApakah Anda benar-benar yakin ingin menghapusnya? Tindakan ini bisa merusak konsistensi data default.`)) return;
   } else {
     if (!confirm(`Hapus kategori utama "${name}"?`)) return;
   }
-  
+
   // Optimistic UI
   state.references = (state.references || []).filter(r => r !== name);
   const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
   localStorage.setItem(envKey, JSON.stringify(state));
   updateUI();
-  
+
   if (gasUrl) {
     showLoading(true);
     try {
@@ -1570,7 +1570,7 @@ function openModalSetorRKD() {
   document.getElementById('setor-rkd-amount').value = saldo;
   document.getElementById('setor-rkd-amount').dataset.max = saldo;
   document.getElementById('setor-rkd-desc').value = 'Setoran sisa Non-APBDes ke RKD';
-  
+
   openModal('modal-setor-rkd');
 }
 
@@ -1675,23 +1675,23 @@ function renderNonApbdesPage() {
   const el = document.getElementById('non-apbdes-list');
   if (!el) return;
   el.innerHTML = '';
-  
+
   const trx = getActiveTrx().filter(isNonApbdesTrx);
-  
+
   // Calculate Stats
   const inc = trx.filter(t => isPemasukan(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
   const exp = trx.filter(t => isPengeluaran(t) && isApproved(t)).reduce((s, t) => s + Number(t.amount || 0), 0);
   const bal = inc - exp;
-  
+
   setText('stat-non-income', formatIDR(inc));
   setText('stat-non-expense', formatIDR(exp));
   setText('stat-non-balance', formatIDR(bal));
-  
+
   if (!trx.length) {
     el.innerHTML = '<tr><td colspan="8" class="empty-state"><p>Belum ada transaksi Non-APBDes di tahun ' + getActiveYear() + '</p></td></tr>';
     return;
   }
-  
+
   trx.forEach(t => {
     const r = document.createElement('tr');
     r.innerHTML = `
@@ -1788,5 +1788,382 @@ async function handleResetDatabase() {
     showToast('Terjadi kesalahan: ' + e.message, 'error');
   }
   showLoading(false);
+}
+
+// ─── EXPORT TO EXCEL ───────────────────────────────────────────
+function exportTableToExcel(tableID, filename = '') {
+  if (typeof XLSX === 'undefined') {
+    showToast('Library Excel belum dimuat, silakan muat ulang halaman.', 'error');
+    return;
+  }
+
+  const table = document.getElementById(tableID);
+  if (!table) {
+    showToast('Data tabel tidak ditemukan', 'error');
+    return;
+  }
+
+  try {
+    const wb = XLSX.utils.table_to_book(table, { sheet: "Laporan", raw: true });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const finalFilename = filename ? `${filename}_${dateStr}.xlsx` : `Export_${dateStr}.xlsx`;
+    XLSX.writeFile(wb, finalFilename);
+    showToast('Berhasil mendownload Excel', 'success');
+  } catch (e) {
+    showToast('Gagal mendownload: ' + e.message, 'error');
+  }
+}
+
+async function exportWithTemplate(type) {
+  if (typeof ExcelJS === 'undefined') {
+    showToast('Library ExcelJS belum dimuat. Silakan muat ulang halaman.', 'error');
+    return;
+  }
+
+  showLoading(true);
+  try {
+    const yr = getActiveYear();
+    const response = await fetch('Laporan TA 2024.xlsx');
+    if (!response.ok) {
+      throw new Error('Gagal mengunduh file template Laporan TA 2024.xlsx');
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+
+    // Dapatkan transaksi APBDes tahun aktif yang disetujui, diurutkan berdasarkan tanggal
+    const activeTrx = [...getActiveApbdesTrx()]
+      .filter(t => isApproved(t))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Hitung Silpa/Saldo Awal dasar
+    const uniqueCategories = [...new Set((state.sources || []).map(s => `[${s.type}] ${s.name}`))];
+    const totalSourcesInit = uniqueCategories.reduce((sum, cat) => {
+      const matchYr = (state.sources || []).find(s => matchCategory(cat, s) && String(s.year || '') === yr);
+      const matchGlobal = (state.sources || []).find(s => matchCategory(cat, s) && !s.year);
+      const src = matchYr || matchGlobal || { initialBalance: 0 };
+      return sum + Number(src.initialBalance || 0);
+    }, 0);
+    const silpa = totalSourcesInit + Number(state.settings?.saldo_lalu || 0);
+
+    if (type === 'bku') {
+      const sheet = workbook.worksheets.find(w => w.name.trim().toUpperCase() === 'BKU');
+      if (!sheet) throw new Error('Sheet BKU tidak ditemukan di dalam template.');
+
+      const namaBulanIndo = [
+        'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
+        'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'
+      ];
+      const monthKeywords = [
+        'JANUARI', 'PEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
+        'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOPEMBER', 'DESEMBER'
+      ];
+
+      let saldo_awal = silpa;
+
+      for (let m = 1; m <= 12; m++) {
+        const keyword = monthKeywords[m - 1];
+        let R_title = null;
+
+        for (let r = 1; r <= sheet.rowCount; r++) {
+          const cellValue = String(sheet.getRow(r).getCell(1).value || '');
+          if (cellValue.includes('BULAN') && (
+            cellValue.toUpperCase().includes(keyword) ||
+            (keyword === 'PEBRUARI' && cellValue.toUpperCase().includes('FEBRUARI')) ||
+            (keyword === 'NOPEMBER' && cellValue.toUpperCase().includes('NOVEMBER'))
+          )) {
+            R_title = sheet.getRow(r);
+            break;
+          }
+        }
+
+        if (!R_title) continue;
+
+        // Update tahun di judul bulan
+        R_title.getCell(1).value = `BULAN   :     ${namaBulanIndo[m - 1]}  ${yr}`;
+
+        // Update tahun di judul BUKU KAS HARIAN di atasnya (biasanya 2 baris di atas)
+        const tahunRow = sheet.getRow(R_title.number - 2);
+        if (tahunRow && String(tahunRow.getCell(1).value || '').includes('TAHUN')) {
+          tahunRow.getCell(1).value = `TAHUN ${yr}`;
+        }
+
+        // Cari baris header tabel dengan kata "NO"
+        let headerRowIdx = null;
+        for (let r = R_title.number + 1; r <= R_title.number + 6; r++) {
+          const v = String(sheet.getRow(r).getCell(1).value || '');
+          if (v.trim().toUpperCase() === 'NO') {
+            headerRowIdx = r;
+            break;
+          }
+        }
+
+        if (!headerRowIdx) continue;
+
+        const saldoAwalRowIdx = headerRowIdx + 1;
+        const rowSaldoAwal = sheet.getRow(saldoAwalRowIdx);
+
+        // Update saldo awal
+        rowSaldoAwal.getCell(4).value = m === 1 ? `Saldo Silpa Tahun ${yr}` : 'Saldo Pindahan Bulan Sebelumnya';
+        rowSaldoAwal.getCell(5).value = saldo_awal;
+        rowSaldoAwal.getCell(6).value = null;
+
+        // Cari baris JUMLAH
+        let jumlahRowIdx = null;
+        for (let r = headerRowIdx + 2; r <= sheet.rowCount; r++) {
+          const v = String(sheet.getRow(r).getCell(4).value || '');
+          if (v.trim().toUpperCase() === 'JUMLAH') {
+            jumlahRowIdx = r;
+            break;
+          }
+        }
+
+        if (!jumlahRowIdx) continue;
+
+        // Ambil transaksi untuk bulan ini
+        const monthTrx = activeTrx.filter(t => {
+          const parts = String(t.date || '').split('-');
+          return parts.length >= 2 && Number(parts[1]) === m;
+        });
+
+        const N = monthTrx.length;
+        const origCount = jumlahRowIdx - (headerRowIdx + 2);
+
+        // Sesuaikan jumlah baris transaksi
+        if (N > origCount) {
+          const insertCount = N - origCount;
+          for (let i = 0; i < insertCount; i++) {
+            sheet.insertRow(jumlahRowIdx, []);
+          }
+        } else if (N < origCount) {
+          const deleteCount = origCount - N;
+          sheet.spliceRows(headerRowIdx + 2 + N, deleteCount);
+        }
+
+        // Tulis transaksi baru ke baris-baris kosong tersebut
+        for (let i = 0; i < N; i++) {
+          const t = monthTrx[i];
+          const rIdx = headerRowIdx + 2 + i;
+          const row = sheet.getRow(rIdx);
+
+          if (rIdx !== headerRowIdx + 2) {
+            copyRowStyle(sheet, headerRowIdx + 2, rIdx);
+          }
+
+          row.getCell(1).value = i + 1; // NO
+          row.getCell(2).value = new Date(t.date); // TGL
+          row.getCell(3).value = t.noBukti || t.id || ''; // NO BKT.
+          row.getCell(4).value = t.desc || t.uraian || ''; // URAIAN
+          row.getCell(5).value = isPemasukan(t) ? Number(t.amount) : null;
+          row.getCell(6).value = isPengeluaran(t) ? Number(t.amount) : null;
+          row.getCell(7).value = t.category || ''; // SUMBER DANA
+          row.getCell(8).value = t.tpk || ''; // TPK
+        }
+
+        const newJumlahRowIdx = headerRowIdx + 2 + N;
+        const rowJumlah = sheet.getRow(newJumlahRowIdx);
+        rowJumlah.getCell(5).value = N > 0 ? { formula: `SUM(E${headerRowIdx + 2}:E${headerRowIdx + 1 + N})` } : 0;
+        rowJumlah.getCell(6).value = N > 0 ? { formula: `SUM(F${headerRowIdx + 2}:F${headerRowIdx + 1 + N})` } : 0;
+
+        const newSaldoBulanRowIdx = newJumlahRowIdx + 1;
+        const rowSaldoBulan = sheet.getRow(newSaldoBulanRowIdx);
+        rowSaldoBulan.getCell(4).value = `Saldo bulan ${namaBulanIndo[m - 1]} ${yr}`;
+        rowSaldoBulan.getCell(6).value = { formula: `E${saldoAwalRowIdx}+E${newJumlahRowIdx}-F${newJumlahRowIdx}` };
+
+        // Kalkulasi saldo berjalan numerik untuk bulan berikutnya
+        const monthInc = monthTrx.filter(t => isPemasukan(t)).reduce((sum, t) => sum + Number(t.amount || 0), 0);
+        const monthExp = monthTrx.filter(t => isPengeluaran(t)).reduce((sum, t) => sum + Number(t.amount || 0), 0);
+        saldo_awal = saldo_awal + monthInc - monthExp;
+
+        // Update tanggal penandatanganan jika ada
+        let dateRowIdx = null;
+        for (let r = newSaldoBulanRowIdx + 1; r <= newSaldoBulanRowIdx + 10; r++) {
+          const v = String(sheet.getRow(r).getCell(5).value || '');
+          if (v.includes('Patihan,')) {
+            dateRowIdx = r;
+            break;
+          }
+        }
+        if (dateRowIdx) {
+          const lastDay = new Date(Number(yr), m, 0).getDate();
+          sheet.getRow(dateRowIdx).getCell(5).value = `Patihan, ${lastDay}   ${namaBulanIndo[m - 1]} ${yr}`;
+        }
+      }
+
+    } else if (type === 'lpj') {
+      const sheet = workbook.worksheets.find(w => w.name.trim().toUpperCase().startsWith('LPJ'));
+      if (!sheet) throw new Error('Sheet LPJ tidak ditemukan di dalam template.');
+
+      // Update tahun periode di judul (biasanya di baris 3)
+      const titleRow = sheet.getRow(3);
+      if (titleRow) {
+        titleRow.getCell(1).value = `PERIODE :  1 JANUARI  ${yr}  S/D 31 DESEMBER  ${yr}`;
+      }
+
+      // Update Saldo Silpa Row (Row 7)
+      const silpaRow = sheet.getRow(7);
+      if (silpaRow) {
+        silpaRow.getCell(4).value = `Saldo Silpa Tahun ${Number(yr) - 1}`;
+        silpaRow.getCell(5).value = silpa;
+      }
+
+      // Cari baris JUMLAH untuk Penerimaan (Pemasukan)
+      let lpjJumlahIncRowIdx = null;
+      for (let r = 8; r <= sheet.rowCount; r++) {
+        const v = String(sheet.getRow(r).getCell(4).value || '');
+        if (v.trim().toUpperCase() === 'JUMLAH') {
+          lpjJumlahIncRowIdx = r;
+          break;
+        }
+      }
+
+      if (!lpjJumlahIncRowIdx) throw new Error('Format baris JUMLAH Penerimaan di sheet LPJ tidak ditemukan.');
+
+      const incTrx = activeTrx.filter(t => isPemasukan(t));
+      const N_inc = incTrx.length;
+      const origIncCount = lpjJumlahIncRowIdx - 8;
+
+      // Sesuaikan baris untuk Penerimaan
+      if (N_inc > origIncCount) {
+        const insertCount = N_inc - origIncCount;
+        for (let i = 0; i < insertCount; i++) {
+          sheet.insertRow(lpjJumlahIncRowIdx, []);
+        }
+      } else if (N_inc < origIncCount) {
+        const deleteCount = origIncCount - N_inc;
+        sheet.spliceRows(8 + N_inc, deleteCount);
+      }
+
+      // Tulis transaksi Penerimaan
+      for (let i = 0; i < N_inc; i++) {
+        const t = incTrx[i];
+        const rIdx = 8 + i;
+        const row = sheet.getRow(rIdx);
+
+        if (rIdx !== 8) {
+          copyRowStyle(sheet, 8, rIdx);
+        }
+
+        row.getCell(1).value = i + 1;
+        row.getCell(2).value = new Date(t.date);
+        row.getCell(3).value = t.noBukti || t.id || '';
+        row.getCell(4).value = t.desc || t.uraian || '';
+        row.getCell(5).value = Number(t.amount);
+        row.getCell(6).value = t.category || '';
+      }
+
+      const newLpjJumlahIncRowIdx = 8 + N_inc;
+      const rowJumlahInc = sheet.getRow(newLpjJumlahIncRowIdx);
+      rowJumlahInc.getCell(5).value = N_inc > 0 ? { formula: `SUM(E8:E${8 + N_inc - 1})` } : 0;
+
+      // Cari baris JUMLAH PENGELUARAN secara dinamis
+      let lpjJumlahExpRowIdx = null;
+      for (let r = newLpjJumlahIncRowIdx + 1; r <= sheet.rowCount; r++) {
+        const v = String(sheet.getRow(r).getCell(4).value || '');
+        if (v.trim().toUpperCase() === 'JUMLAH PENGELUARAN') {
+          lpjJumlahExpRowIdx = r;
+          break;
+        }
+      }
+
+      if (!lpjJumlahExpRowIdx) throw new Error('Format baris JUMLAH PENGELUARAN di sheet LPJ tidak ditemukan.');
+
+      // Cari baris header tabel Pengeluaran (dengan tulisan "NO") di antara newLpjJumlahIncRowIdx dan lpjJumlahExpRowIdx
+      let expHeaderRowIdx = null;
+      for (let r = newLpjJumlahIncRowIdx + 1; r < lpjJumlahExpRowIdx; r++) {
+        const v = String(sheet.getRow(r).getCell(1).value || '');
+        if (v.trim().toUpperCase() === 'NO') {
+          expHeaderRowIdx = r;
+          break;
+        }
+      }
+
+      if (!expHeaderRowIdx) throw new Error('Header tabel Pengeluaran di sheet LPJ tidak ditemukan.');
+
+      const expTrx = activeTrx.filter(t => isPengeluaran(t));
+      const N_exp = expTrx.length;
+      const startExpRowIdx = expHeaderRowIdx + 2; // baris data pertama pengeluaran (biasanya expHeaderRowIdx + 1 adalah "BELANJA DLL :")
+      const origExpCount = lpjJumlahExpRowIdx - startExpRowIdx;
+
+      // Sesuaikan baris untuk Pengeluaran
+      if (N_exp > origExpCount) {
+        const insertCount = N_exp - origExpCount;
+        for (let i = 0; i < insertCount; i++) {
+          sheet.insertRow(lpjJumlahExpRowIdx, []);
+        }
+      } else if (N_exp < origExpCount) {
+        const deleteCount = origExpCount - N_exp;
+        sheet.spliceRows(startExpRowIdx + N_exp, deleteCount);
+      }
+
+      // Tulis transaksi Pengeluaran
+      for (let i = 0; i < N_exp; i++) {
+        const t = expTrx[i];
+        const rIdx = startExpRowIdx + i;
+        const row = sheet.getRow(rIdx);
+
+        if (rIdx !== startExpRowIdx) {
+          copyRowStyle(sheet, startExpRowIdx, rIdx);
+        }
+
+        row.getCell(1).value = i + 1;
+        row.getCell(2).value = new Date(t.date);
+        row.getCell(3).value = t.noBukti || t.id || '';
+        row.getCell(4).value = t.desc || t.uraian || '';
+        row.getCell(5).value = Number(t.amount);
+        row.getCell(6).value = t.category || '';
+      }
+
+      const newLpjJumlahExpRowIdx = startExpRowIdx + N_exp;
+      const rowJumlahExp = sheet.getRow(newLpjJumlahExpRowIdx);
+      rowJumlahExp.getCell(5).value = N_exp > 0 ? { formula: `SUM(E${startExpRowIdx}:E${startExpRowIdx + N_exp - 1})` } : 0;
+
+      const saldoRowIdx = newLpjJumlahExpRowIdx + 1;
+      const rowSaldo = sheet.getRow(saldoRowIdx);
+      rowSaldo.getCell(5).value = { formula: `E7+E${newLpjJumlahIncRowIdx}-E${newLpjJumlahExpRowIdx}` };
+
+      // Update tanggal penandatanganan jika ada
+      let dateRowIdx = null;
+      for (let r = saldoRowIdx + 1; r <= saldoRowIdx + 10; r++) {
+        const v = String(sheet.getRow(r).getCell(5).value || '');
+        if (v.includes('Patihan,')) {
+          dateRowIdx = r;
+          break;
+        }
+      }
+      if (dateRowIdx) {
+        sheet.getRow(dateRowIdx).getCell(5).value = `Patihan, 31 Desember  ${yr}`;
+      }
+    }
+
+    // Write and download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Laporan TA ${yr}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showToast('Berhasil mengunduh Excel menggunakan template', 'success');
+
+  } catch (e) {
+    console.error(e);
+    showToast('Gagal memproses template: ' + e.message, 'error');
+  }
+  showLoading(false);
+}
+
+// Fungsi helper untuk menyalin style baris secara mendalam (cell-by-cell)
+function copyRowStyle(sheet, fromRowIdx, toRowIdx) {
+  const fromRow = sheet.getRow(fromRowIdx);
+  const toRow = sheet.getRow(toRowIdx);
+  toRow.height = fromRow.height;
+  for (let c = 1; c <= 15; c++) {
+    const fromCell = fromRow.getCell(c);
+    const toCell = toRow.getCell(c);
+    toCell.style = fromCell.style;
+  }
 }
 
