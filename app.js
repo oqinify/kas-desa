@@ -44,6 +44,8 @@ const cachedState = localStorage.getItem(STATE_CACHE_KEY + '_' + lastEnv);
 if (cachedState) {
   state = JSON.parse(cachedState);
 }
+state.simulations = state.simulations || [];
+state.isSimulationModeActive = state.isSimulationModeActive || false;
 
 
 
@@ -271,6 +273,8 @@ function updateUI() {
   updateReportUI(); renderRKD(); populateDropdowns(); populateReferenceDropdowns();
 
   renderSettingsSources(); renderSettingsReferences(); renderNonApbdesPage(); initCharts();
+  renderSimulations();
+  updateSimulationModeUI();
 
   updateEnvUI();
   updateSettingsUI();
@@ -327,7 +331,11 @@ function getActiveYear() {
 // Helper: filter transaksi sesuai tahun anggaran aktif secara robust
 function getActiveTrx() {
   const yr = getActiveYear();
-  return (state.transactions || []).filter(t => getYearFromDateString(t.date) === yr);
+  let txs = [...(state.transactions || [])];
+  if (state.isSimulationModeActive) {
+    txs = txs.concat(state.simulations || []);
+  }
+  return txs.filter(t => getYearFromDateString(t.date) === yr);
 }
 
 // Helper: mencocokkan kategori transaksi dengan sumber dana secara dinamis dan toleran format
@@ -492,18 +500,34 @@ function renderBudgets() {
   if (!elSilpa || !elCurrent) return;
 
   elSilpa.innerHTML = ''; elCurrent.innerHTML = '';
+  const isPerubahan = (state.settings?.APBDes || 'Awal') === 'Perubahan';
+
+  const titleSilpa = document.getElementById('budget-title-silpa');
+  if (titleSilpa) titleSilpa.style.display = isPerubahan ? '' : 'none';
+  elSilpa.style.display = isPerubahan ? '' : 'none';
+
+  const defaultDescriptions = {
+    'DD Earmark': 'Dana Desa yang sudah ditentukan penggunaannya',
+    'DD NonEarmark': 'Dana Desa bebas/reguler',
+    'ADD Siltap': 'Alokasi Dana Desa untuk Penghasilan Tetap',
+    'ADD Operasional': 'Alokasi Dana Desa untuk Operasional',
+    'PAD': 'Pendapatan Asli Desa',
+    'BHPR': 'Bagi Hasil Pajak & Retribusi',
+    'DLL': 'Pendapatan Lain-lain yang Sah'
+  };
 
   // --- 1. Anggaran Tahun Berjalan (Berdasarkan Sheet Referensi) ---
   const activeTrx = getActiveApbdesTrx();
   (state.references || []).forEach(refLabel => {
-    // Cari apakah ada deskripsi di state.sources yang cocok untuk tahun aktif atau global
-    const matchYr = (state.sources || []).find(s => (`[${s.type}] ${s.name}` === refLabel || s.name === refLabel) && String(s.year || '') === getActiveYear());
-    const matchGlobal = (state.sources || []).find(s => (`[${s.type}] ${s.name}` === refLabel || s.name === refLabel) && !s.year);
-    const original = matchYr || matchGlobal || {};
+    const matchYr = (state.sources || []).find(s => (s.type === refLabel || '[' + s.type + '] ' + s.name === refLabel || s.name === refLabel) && String(s.year || '') === getActiveYear());
+    const matchGlobal = (state.sources || []).find(s => (s.type === refLabel || '[' + s.type + '] ' + s.name === refLabel || s.name === refLabel) && !s.year);
+    const original = matchGlobal || matchYr || {};
 
-    // Hapus kata "Silpa" agar lebih bersih di bagian Pendapatan Baru
     const cleanLabel = refLabel.replace(/silpa/gi, '').replace(/\s+/g, ' ').trim();
-    const cleanDesc = (original.description || '').replace(/silpa/gi, '').replace(/\s+/g, ' ').trim();
+    let cleanDesc = (original.description || '').replace(/silpa/gi, '').replace(/\s+/g, ' ').trim();
+    if (!cleanDesc || cleanDesc.toLowerCase().includes('import')) {
+      cleanDesc = defaultDescriptions[cleanLabel] || cleanDesc;
+    }
 
     const income = activeTrx
       .filter(t => matchCategory(t.category, refLabel) && isPemasukan(t) && isApproved(t))
@@ -517,22 +541,24 @@ function renderBudgets() {
   });
 
   // --- 2. Anggaran SiLPA (Berdasarkan Sheet Silpa/Master) ---
-  const activeSources = (state.sources || []).filter(src => {
-    const catLabel = `[${src.type}] ${src.name}`;
-    const matchYr = (state.sources || []).find(s => matchCategory(catLabel, s) && String(s.year || '') === getActiveYear());
-    if (matchYr) return src === matchYr;
-    return !src.year;
-  });
+  if (isPerubahan) {
+    const activeSources = (state.sources || []).filter(src => {
+      const catLabel = `[${src.type}] ${src.name}`;
+      const matchYr = (state.sources || []).find(s => matchCategory(catLabel, s) && String(s.year || '') === getActiveYear());
+      if (matchYr) return src === matchYr;
+      return !src.year;
+    });
 
-  activeSources.forEach(src => {
-    const label = `[${src.type}] ${src.name}`;
-    const init = Number(src.initialBalance || 0);
-    const spentSilpa = activeTrx
-      .filter(t => matchCategory(t.category, src) && isPengeluaran(t) && isApproved(t))
-      .reduce((s, t) => s + Number(t.amount || 0), 0);
+    activeSources.forEach(src => {
+      const label = `[${src.type}] ${src.name}`;
+      const init = Number(src.initialBalance || 0);
+      const spentSilpa = activeTrx
+        .filter(t => matchCategory(t.category, src) && isPengeluaran(t) && isApproved(t))
+        .reduce((s, t) => s + Number(t.amount || 0), 0);
 
-    elSilpa.appendChild(createBudgetCard(label, src.description || '', init, spentSilpa, 'SiLPA'));
-  });
+      elSilpa.appendChild(createBudgetCard(label, src.description || '', init, spentSilpa, 'SiLPA'));
+    });
+  }
 
   lucide.createIcons();
 }
@@ -875,6 +901,8 @@ function renderRKD() {
 
 // ─── ACTIONS ───────────────────────────────────────────────────
 async function saveTransaction() {
+  const isSimulasi = document.getElementById('trx-is-simulasi')?.checked || false;
+
   const data = {
     type: document.getElementById('trx-type').value,
     date: document.getElementById('trx-date').value,
@@ -894,11 +922,12 @@ async function saveTransaction() {
   if (data.type === 'pengeluaran' && data.category) {
     const isPerubahan = (state.settings?.APBDes || 'Awal') === 'Perubahan';
     const totalBudget = isPerubahan
-      ? (state.sources || []).filter(s => s.type === data.category).reduce((sum, s) => sum + Number(s.initialBalance || 0), 0)
+      ? (state.sources || []).filter(s => matchCategory(data.category, s) && String(s.year || '') === getActiveYear()).reduce((sum, s) => sum + Number(s.initialBalance || 0), 0)
       : 0;
-    const totalSpent = (state.transactions || []).filter(t => t.category === data.category && t.type === 'pengeluaran' && t.status !== 'rejected').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const activeTrx = getActiveTrx();
+    const totalSpent = activeTrx.filter(t => t.category === data.category && t.type === 'pengeluaran' && t.status !== 'rejected').reduce((sum, t) => sum + Number(t.amount || 0), 0);
     // Hitung pemasukan untuk sumber dana ini sebagai batas alternatif
-    const totalIncome = (state.transactions || []).filter(t => t.category === data.category && t.type === 'pemasukan' && t.status === 'approved').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const totalIncome = activeTrx.filter(t => t.category === data.category && t.type === 'pemasukan' && isApproved(t)).reduce((sum, t) => sum + Number(t.amount || 0), 0);
     const remaining = (totalBudget + totalIncome) - totalSpent;
 
     if (totalBudget === 0 && totalIncome === 0) {
@@ -908,6 +937,20 @@ async function saveTransaction() {
       showToast(`Warning: Saldo ${data.category} tidak mencukupi! Sisa: ${formatIDR(remaining)}`, 'error');
       return;
     }
+  }
+
+  if (isSimulasi) {
+    const tempId = 'TRX-SIM-' + Date.now();
+    const simData = { ...data, id: tempId, status: 'simulation' };
+    state.simulations = state.simulations || [];
+    state.simulations.unshift(simData);
+
+    const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
+    localStorage.setItem(envKey, JSON.stringify(state));
+    updateUI();
+    showToast('Draf simulasi pengeluaran berhasil disimpan!', 'warning');
+    closeModal('modal-transaksi');
+    return;
   }
 
   // Optimistic UI Update
@@ -967,6 +1010,15 @@ async function processApproval(id, status) {
 }
 
 async function confirmDelete(id) {
+  // Cek jika ini transaksi simulasi
+  const isSim = (state.simulations || []).some(t => t.id === id);
+  if (isSim) {
+    if (confirm('Hapus draf simulasi pengeluaran ini?')) {
+      hapusSimulasi(id);
+    }
+    return;
+  }
+
   const trx = state.transactions.find(t => t.id === id);
   if (!trx) return;
 
@@ -1423,7 +1475,27 @@ function showPage(id) {
   const n = document.getElementById('nav-' + id); if (n) n.classList.add('active');
   if (window.innerWidth <= 1024) document.getElementById('sidebar').classList.remove('active');
 }
-function openModal(id) { document.getElementById(id).style.display = 'flex'; if (id === 'modal-transaksi') populateDropdowns(); }
+function openModal(id, isSimulation = false) {
+  document.getElementById(id).style.display = 'flex';
+  if (id === 'modal-transaksi') {
+    populateDropdowns();
+    updateModalBudgetInfo();
+
+    const titleEl = document.getElementById('modal-transaksi-title');
+    const cbContainer = document.getElementById('trx-is-simulasi-container');
+    const cb = document.getElementById('trx-is-simulasi');
+
+    if (isSimulation) {
+      if (titleEl) titleEl.textContent = 'Transaksi Baru (Simulasi)';
+      if (cbContainer) cbContainer.style.display = 'flex';
+      if (cb) cb.checked = true;
+    } else {
+      if (titleEl) titleEl.textContent = 'Transaksi Baru';
+      if (cbContainer) cbContainer.style.display = 'none';
+      if (cb) cb.checked = false;
+    }
+  }
+}
 function closeModal(id) {
   document.getElementById(id).style.display = 'none';
   if (id === 'modal-transaksi') resetFormTransaksi();
@@ -1473,8 +1545,8 @@ function initCharts() {
   if (cashflowChart) cashflowChart.destroy(); if (categoryChart) categoryChart.destroy();
   const activeTrx = getActiveApbdesTrx();
   const dates = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); dates.push(d.toISOString().split('T')[0]); }
-  const iD = dates.map(d => activeTrx.filter(t => (t.date || '').includes(d) && t.type === 'pemasukan' && t.status === 'approved').reduce((s, t) => s + (t.amount || 0), 0));
-  const eD = dates.map(d => activeTrx.filter(t => (t.date || '').includes(d) && t.type === 'pengeluaran' && t.status === 'approved').reduce((s, t) => s + (t.amount || 0), 0));
+  const iD = dates.map(d => activeTrx.filter(t => (t.date || '').includes(d) && t.type === 'pemasukan' && isApproved(t)).reduce((s, t) => s + (t.amount || 0), 0));
+  const eD = dates.map(d => activeTrx.filter(t => (t.date || '').includes(d) && t.type === 'pengeluaran' && isApproved(t)).reduce((s, t) => s + (t.amount || 0), 0));
   cashflowChart = new Chart(c1.getContext('2d'), {
     type: 'line', data: {
       labels: dates.map(d => d.split('-')[2] + '/' + d.split('-')[1]), datasets: [
@@ -1485,8 +1557,8 @@ function initCharts() {
   });
 
   const c2 = document.getElementById('categoryChart'); if (!c2) return;
-  const cl = [...new Set(activeTrx.filter(t => t.type === 'pengeluaran' && t.status === 'approved').map(t => t.category))];
-  const cd = cl.map(c => activeTrx.filter(t => t.category === c && t.type === 'pengeluaran' && t.status === 'approved').reduce((s, t) => s + (t.amount || 0), 0));
+  const cl = [...new Set(activeTrx.filter(t => t.type === 'pengeluaran' && isApproved(t)).map(t => t.category))];
+  const cd = cl.map(c => activeTrx.filter(t => t.category === c && t.type === 'pengeluaran' && isApproved(t)).reduce((s, t) => s + (t.amount || 0), 0));
   categoryChart = new Chart(c2.getContext('2d'), { type: 'doughnut', data: { labels: cl.length ? cl : ['Belum ada'], datasets: [{ data: cd.length ? cd : [1], backgroundColor: cl.length ? ['#6366f1', '#3b82f6', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'] : ['#e2e8f0'], borderWidth: 0 }] }, options: { responsive: true, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 10, font: { size: 10 } } } } } });
 }
 
@@ -1505,7 +1577,7 @@ function fmtDate(d) { try { return new Date(d).toLocaleDateString('id-ID', { day
 function setText(id, v) { const e = document.getElementById(id); if (e) e.innerText = v; }
 function isApproved(t) {
   const s = (t.status || '').trim().toLowerCase();
-  // Jika status kosong/tidak ada, anggap approved (default)
+  if (s === 'simulation') return state.isSimulationModeActive;
   return s === 'approved' || s === '';
 }
 function isPemasukan(t) { return (t.type || '').trim().toLowerCase() === 'pemasukan'; }
@@ -2166,4 +2238,199 @@ function copyRowStyle(sheet, fromRowIdx, toRowIdx) {
     toCell.style = fromCell.style;
   }
 }
+
+// ─── SIMULATION SANDBOX HANDLERS ────────────────────────────────
+function toggleSimulationMode() {
+  state.isSimulationModeActive = !state.isSimulationModeActive;
+  updateUI();
+
+  if (state.isSimulationModeActive) {
+    showToast('Mode Simulasi AKTIF! Menampilkan proyeksi anggaran.', 'warning');
+  } else {
+    showToast('Mode Simulasi MATI. Kembali ke data riil.', 'info');
+  }
+}
+
+function updateSimulationModeUI() {
+  const statusEl = document.getElementById('simulation-toggle-status');
+  const containerEl = document.getElementById('simulation-toggle-container');
+  if (!statusEl || !containerEl) return;
+
+  if (state.isSimulationModeActive) {
+    statusEl.textContent = 'AKTIF';
+    containerEl.classList.add('active');
+    document.querySelectorAll('.stat-card, .chart-container, .allocation-card').forEach(el => {
+      el.classList.add('simulation-active-border');
+    });
+
+    let badge = document.getElementById('dashboard-simulation-badge');
+    if (!badge) {
+      const headerTitle = document.querySelector('#page-dashboard .page-header-title');
+      if (headerTitle) {
+        badge = document.createElement('div');
+        badge.id = 'dashboard-simulation-badge';
+        badge.className = 'simulation-active-badge';
+        badge.innerText = '⚠️ Mode Proyeksi Simulasi Aktif';
+        headerTitle.appendChild(badge);
+      }
+    }
+  } else {
+    statusEl.textContent = 'MATI';
+    containerEl.classList.remove('active');
+    document.querySelectorAll('.stat-card, .chart-container, .allocation-card').forEach(el => {
+      el.classList.remove('simulation-active-border');
+    });
+    const badge = document.getElementById('dashboard-simulation-badge');
+    if (badge) badge.remove();
+  }
+
+  // Update sidebar badge
+  const badgeSim = document.getElementById('badge-simulasi');
+  if (badgeSim) {
+    const count = (state.simulations || []).length;
+    if (count > 0) {
+      badgeSim.textContent = count;
+      badgeSim.style.display = 'flex';
+    } else {
+      badgeSim.style.display = 'none';
+    }
+  }
+}
+
+function renderSimulations() {
+  const el = document.getElementById('simulasi-transactions-list');
+  if (!el) return;
+  el.innerHTML = '';
+
+  const sims = state.simulations || [];
+  if (!sims.length) {
+    el.innerHTML = '<tr><td colspan="6" class="empty-state"><p>Tidak ada draf simulasi pengeluaran. Gunakan tombol "+ Tambah Simulasi" untuk membuat baru.</p></td></tr>';
+    return;
+  }
+
+  sims.forEach(t => {
+    const r = document.createElement('tr');
+    r.innerHTML = `
+      <td>${fmtDate(t.date)}</td>
+      <td><b>${t.category || '-'}</b></td>
+      <td>${t.desc}</td>
+      <td style="font-weight:700;color:var(--danger)">${formatIDR(t.amount)}</td>
+      <td>${t.payMethod}</td>
+      <td>
+        <div style="display:flex;gap:0.4rem;">
+          <button class="btn btn-success btn-sm" onclick="cairkanSimulasi('${t.id}')">
+            <i data-lucide="check-circle" style="width:13px;height:13px"></i> Cairkan
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="confirmDelete('${t.id}')" style="color:var(--danger);border-color:rgba(239,68,68,0.2)">
+            <i data-lucide="trash-2" style="width:13px;height:13px"></i> Hapus
+          </button>
+        </div>
+      </td>
+    `;
+    el.appendChild(r);
+  });
+
+  lucide.createIcons();
+}
+
+async function cairkanSimulasi(id) {
+  const idx = (state.simulations || []).findIndex(t => t.id === id);
+  if (idx === -1) return;
+
+  const simTrx = state.simulations[idx];
+
+  if (!confirm(`Apakah Anda yakin ingin mencairkan anggaran ini secara resmi?\n\nPengeluaran sebesar ${formatIDR(simTrx.amount)} untuk "${simTrx.desc}" akan dicatat sebagai transaksi riil.`)) {
+    return;
+  }
+
+  const isAdmin = (document.getElementById('user-name')?.innerText.toLowerCase() || 'web') === 'admin';
+  const initialStatus = (isAdmin || simTrx.type === 'pemasukan' || simTrx.amount < (state.config?.BATAS_APPROVAL || 5000000)) ? 'approved' : 'pending';
+
+  const realTrx = {
+    ...simTrx,
+    id: 'TRX-REAL-' + Date.now(),
+    status: initialStatus
+  };
+
+  // Hapus dari simulations
+  state.simulations.splice(idx, 1);
+
+  // Tambah ke transactions
+  state.transactions.unshift(realTrx);
+
+  const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
+  localStorage.setItem(envKey, JSON.stringify(state));
+  updateUI();
+
+  if (gasUrl) {
+    showToast('Sinkronisasi transaksi pencairan ke server...', 'info');
+    postToGAS({ action: 'saveTransaction', data: realTrx }).then(res => {
+      if (res?.success && !res.offline) {
+        showToast('Transaksi pencairan berhasil disinkronkan!', 'success');
+      }
+    });
+  } else {
+    showToast('Transaksi pencairan berhasil disimpan (mode lokal)!', 'success');
+  }
+}
+
+function hapusSimulasi(id) {
+  state.simulations = (state.simulations || []).filter(t => t.id !== id);
+  const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
+  localStorage.setItem(envKey, JSON.stringify(state));
+  updateUI();
+  showToast('Draf simulasi pengeluaran dihapus.', 'info');
+}
+
+function updateModalBudgetInfo() {
+  const infoEl = document.getElementById('trx-budget-info');
+  if (!infoEl) return;
+
+  const type = document.getElementById('trx-type').value;
+  const category = document.getElementById('trx-category').value;
+  const amountVal = document.getElementById('trx-amount').value;
+  const amount = parseFloat(amountVal) || 0;
+
+  if (type === 'pemasukan') {
+    infoEl.textContent = 'Pemasukan menambah kas (tidak dibatasi pagu).';
+    infoEl.style.color = 'var(--success)';
+    return;
+  }
+
+  if (!category) {
+    infoEl.textContent = 'Pilih sumber dana untuk melihat sisa anggaran.';
+    infoEl.style.color = 'var(--text-muted)';
+    return;
+  }
+
+  // Hitung sisa anggaran dengan logika yang sama seperti di saveTransaction
+  const activeTrx = getActiveTrx();
+  const isPerubahan = (state.settings?.APBDes || 'Awal') === 'Perubahan';
+  const totalBudget = isPerubahan
+    ? (state.sources || []).filter(s => matchCategory(category, s) && String(s.year || '') === getActiveYear()).reduce((sum, s) => sum + Number(s.initialBalance || 0), 0)
+    : 0;
+  const totalSpent = activeTrx.filter(t => t.category === category && t.type === 'pengeluaran' && t.status !== 'rejected').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const totalIncome = activeTrx.filter(t => t.category === category && t.type === 'pemasukan' && isApproved(t)).reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const remaining = (totalBudget + totalIncome) - totalSpent;
+
+  if (totalBudget === 0 && totalIncome === 0) {
+    infoEl.textContent = `Peringatan: Belum ada anggaran/pemasukan terdaftar untuk ${category}.`;
+    infoEl.style.color = 'var(--danger)';
+    return;
+  }
+
+  if (amount > remaining) {
+    infoEl.textContent = `⚠️ Saldo tidak mencukupi! Sisa: ${formatIDR(remaining)} (Kurang: ${formatIDR(amount - remaining)})`;
+    infoEl.style.color = 'var(--danger)';
+  } else {
+    infoEl.textContent = `Sisa anggaran tersedia: ${formatIDR(remaining)}`;
+    infoEl.style.color = 'var(--text-body)';
+
+    // Switch to dark/light theme body text color dynamically
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    infoEl.style.color = isDark ? '#94a3b8' : '#475569';
+  }
+}
+
+
 

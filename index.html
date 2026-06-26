@@ -53,6 +53,9 @@
                 <li class="nav-item"><a class="nav-link" onclick="showPage('approval')" id="nav-approval"><i
                             data-lucide="shield-check"></i><span>Approval</span><span id="badge-approval"
                             class="badge-notif" style="display:none">0</span></a></li>
+                <li class="nav-item"><a class="nav-link" onclick="showPage('simulasi')" id="nav-simulasi"><i
+                            data-lucide="flask-conical"></i><span>Rencana Belanja</span><span id="badge-simulasi"
+                            class="badge-notif" style="display:none">0</span></a></li>
             </ul>
             <div class="nav-section">NON-APBDES</div>
             <ul class="nav-links">
@@ -104,6 +107,10 @@
             </div>
 
             <div class="header-right">
+                <div id="simulation-toggle-container" class="simulation-toggle-container" onclick="toggleSimulationMode()" title="Aktifkan/Nonaktifkan Mode Simulasi">
+                    <i data-lucide="flask-conical"></i>
+                    <span>Simulasi: <strong id="simulation-toggle-status">MATI</strong></span>
+                </div>
                 <div id="sync-status" class="sync-status" style="display:none; cursor:pointer;"
                     title="Klik untuk menghapus antrian (Pending Sync)" onclick="clearSyncQueue()">
                     <i data-lucide="refresh-cw"></i><span id="sync-count">0</span>
@@ -332,7 +339,7 @@
                 </h3>
                 <div id="budget-list-current" class="budget-grid"></div>
 
-                <h3
+                <h3 id="budget-title-silpa"
                     style="margin: 2.5rem 0 1rem 0; font-size: 1rem; color: var(--text-title); display: flex; align-items: center; gap: 0.5rem">
                     <i data-lucide="history" style="width:18px"></i> Anggaran SiLPA (Saldo Awal)
                 </h3>
@@ -501,6 +508,37 @@
                     </div>
                 </div>
             </div>
+
+            <!-- SIMULASI / RENCANA BELANJA -->
+            <div id="page-simulasi" class="page-content" style="display:none">
+                <div class="page-header-title">
+                    <h2>Rencana Belanja (Pre-Disbursement Sandbox)</h2>
+                    <p>Daftar simulasi pengeluaran sebelum dana ditarik/dicairkan secara resmi dari RKD.</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Daftar Draf Simulasi</h3>
+                        <button class="btn btn-primary" onclick="openModal('modal-transaksi', true);"><i data-lucide="plus"></i> Tambah Simulasi</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>TANGGAL</th>
+                                    <th>SUMBER DANA</th>
+                                    <th>DESKRIPSI</th>
+                                    <th>JUMLAH</th>
+                                    <th>METODE BAYAR</th>
+                                    <th>AKSI</th>
+                                </tr>
+                            </thead>
+                            <tbody id="simulasi-transactions-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
         </div>
     </main>
 
@@ -508,27 +546,31 @@
     <div id="modal-transaksi" class="modal-overlay">
         <div class="modal">
             <div class="modal-header">
-                <h2>Transaksi Baru</h2><button class="close-btn"
+                <h2 id="modal-transaksi-title">Transaksi Baru</h2><button class="close-btn"
                     onclick="closeModal('modal-transaksi')">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-row">
-                    <div class="form-group"><label>Tipe</label><select id="trx-type" onchange="populateDropdowns()">
+                    <div class="form-group"><label>Tipe</label><select id="trx-type" onchange="populateDropdowns(); updateModalBudgetInfo();">
                             <option value="pengeluaran">Pengeluaran</option>
                             <option value="pemasukan">Pemasukan</option>
                         </select></div>
                     <div class="form-group"><label>Tanggal</label><input type="date" id="trx-date"></div>
                 </div>
-                <div class="form-group"><label>Sumber Dana</label><select id="trx-category"></select></div>
+                <div class="form-group"><label>Sumber Dana</label><select id="trx-category" onchange="updateModalBudgetInfo()"></select></div>
 
                 <div class="form-group"><label>Jumlah (Rp)</label>
                     <div class="input-prefix"><span>Rp</span><input type="number" id="trx-amount" placeholder="0.00"
-                            step="0.01"></div>
-
+                            step="0.01" oninput="updateModalBudgetInfo()"></div>
+                    <span id="trx-budget-info" style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-top: 0.25rem; font-weight: 600; min-height: 15px;"></span>
                 </div>
 
                 <div class="form-group"><label>Deskripsi</label><textarea id="trx-desc"
                         placeholder="Keterangan transaksi..."></textarea></div>
+                <div id="trx-is-simulasi-container" class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                    <input type="checkbox" id="trx-is-simulasi" style="width: auto; cursor: pointer; margin: 0;">
+                    <label for="trx-is-simulasi" style="margin-bottom: 0; cursor: pointer; font-weight: 600; font-size: 0.8rem; color: var(--text-title);">Simulasi / Draf Belanja (Pre-Disbursement)</label>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Metode Bayar</label>
