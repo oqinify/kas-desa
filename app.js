@@ -10,6 +10,7 @@ let gasUrl = localStorage.getItem(GAS_URL_KEY) || '';
 let syncQueue = JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]');
 
 let cashflowChart, categoryChart;
+let editingSimId = null;
 
 let state = {
   transactions: [
@@ -107,6 +108,7 @@ async function fetchFromGAS() {
     if (d.error) throw new Error(d.error);
     state.transactions = d.transactions || [];
     state.sources = d.sources || [];
+    state.simulations = d.simulations || [];
 
     state.settings = d.settings || {};
     state.config = d.config || state.config;
@@ -924,7 +926,10 @@ async function saveTransaction() {
     const totalBudget = isPerubahan
       ? (state.sources || []).filter(s => matchCategory(data.category, s) && String(s.year || '') === getActiveYear()).reduce((sum, s) => sum + Number(s.initialBalance || 0), 0)
       : 0;
-    const activeTrx = getActiveTrx();
+    let activeTrx = getActiveTrx();
+    if (editingSimId) {
+      activeTrx = activeTrx.filter(t => t.id !== editingSimId);
+    }
     const totalSpent = activeTrx.filter(t => t.category === data.category && t.type === 'pengeluaran' && t.status !== 'rejected').reduce((sum, t) => sum + Number(t.amount || 0), 0);
     // Hitung pemasukan untuk sumber dana ini sebagai batas alternatif
     const totalIncome = activeTrx.filter(t => t.category === data.category && t.type === 'pemasukan' && isApproved(t)).reduce((sum, t) => sum + Number(t.amount || 0), 0);
@@ -940,16 +945,57 @@ async function saveTransaction() {
   }
 
   if (isSimulasi) {
-    const tempId = 'TRX-SIM-' + Date.now();
-    const simData = { ...data, id: tempId, status: 'simulation' };
     state.simulations = state.simulations || [];
-    state.simulations.unshift(simData);
+    if (editingSimId) {
+      const idx = state.simulations.findIndex(t => t.id === editingSimId);
+      if (idx !== -1) {
+        state.simulations[idx] = {
+          ...state.simulations[idx],
+          ...data,
+          amount: parseFloat(data.amount) || 0
+        };
+      }
+      const idToUpdate = editingSimId;
+      editingSimId = null;
 
-    const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
-    localStorage.setItem(envKey, JSON.stringify(state));
-    updateUI();
-    showToast('Draf simulasi pengeluaran berhasil disimpan!', 'warning');
-    closeModal('modal-transaksi');
+      const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
+      localStorage.setItem(envKey, JSON.stringify(state));
+      updateUI();
+      closeModal('modal-transaksi');
+
+      if (gasUrl) {
+        showToast('Sinkronisasi perubahan simulasi ke server...', 'info');
+        postToGAS({ action: 'updateTransaction', id: idToUpdate, data }).then(res => {
+          if (res?.success && !res.offline) {
+            showToast('Draf simulasi berhasil diperbarui di server!', 'success');
+            fetchFromGAS();
+          }
+        });
+      } else {
+        showToast('Draf simulasi pengeluaran berhasil diperbarui!', 'warning');
+      }
+    } else {
+      const tempId = 'TRX-SIM-' + Date.now();
+      const simData = { ...data, id: tempId, status: 'simulation' };
+      state.simulations.unshift(simData);
+
+      const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
+      localStorage.setItem(envKey, JSON.stringify(state));
+      updateUI();
+      closeModal('modal-transaksi');
+
+      if (gasUrl) {
+        showToast('Menyimpan simulasi ke server...', 'info');
+        postToGAS({ action: 'saveTransaction', data: simData }).then(res => {
+          if (res?.success && !res.offline) {
+            showToast('Draf simulasi berhasil disimpan di server!', 'success');
+            fetchFromGAS();
+          }
+        });
+      } else {
+        showToast('Draf simulasi pengeluaran berhasil disimpan!', 'warning');
+      }
+    }
     return;
   }
 
@@ -1501,8 +1547,9 @@ function closeModal(id) {
   if (id === 'modal-transaksi') resetFormTransaksi();
 }
 function resetFormTransaksi() {
+  editingSimId = null;
   document.getElementById('trx-type').value = 'pengeluaran';
-  document.getElementById('trx-date').value = '';
+  document.getElementById('trx-date').value = new Date().toISOString().split('T')[0];
   const cat = document.getElementById('trx-category');
   if (cat) {
     cat.value = '';
@@ -1832,6 +1879,35 @@ function clearCacheAndReload() {
   });
   showToast('Cache berhasil dihapus. Memuat ulang...', 'success');
   setTimeout(() => location.reload(), 800);
+}
+
+async function hardRefreshApp() {
+  showToast('Melakukan Hard Refresh...', 'info');
+
+  // 1. Hapus Cache Storage PWA
+  if ('caches' in window) {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+    } catch (e) {
+      console.error('Gagal menghapus cache storage:', e);
+    }
+  }
+
+  // 2. Unregister Service Workers
+  if ('serviceWorker' in navigator) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(reg => reg.unregister()));
+    } catch (e) {
+      console.error('Gagal unregister service worker:', e);
+    }
+  }
+
+  showToast('Cache terhapus! Memuat ulang halaman...', 'success');
+  setTimeout(() => {
+    window.location.reload(true);
+  }, 800);
 }
 
 async function handleResetDatabase() {
@@ -2321,6 +2397,9 @@ function renderSimulations() {
           <button class="btn btn-success btn-sm" onclick="cairkanSimulasi('${t.id}')">
             <i data-lucide="check-circle" style="width:13px;height:13px"></i> Cairkan
           </button>
+          <button class="btn btn-outline btn-sm" onclick="editSimulasi('${t.id}')" style="color:var(--warning);border-color:rgba(245,158,11,0.2)">
+            <i data-lucide="edit-3" style="width:13px;height:13px"></i> Edit
+          </button>
           <button class="btn btn-outline btn-sm" onclick="confirmDelete('${t.id}')" style="color:var(--danger);border-color:rgba(239,68,68,0.2)">
             <i data-lucide="trash-2" style="width:13px;height:13px"></i> Hapus
           </button>
@@ -2364,9 +2443,13 @@ async function cairkanSimulasi(id) {
 
   if (gasUrl) {
     showToast('Sinkronisasi transaksi pencairan ke server...', 'info');
-    postToGAS({ action: 'saveTransaction', data: realTrx }).then(res => {
-      if (res?.success && !res.offline) {
+    Promise.all([
+      postToGAS({ action: 'deleteTransaction', id: simTrx.id }),
+      postToGAS({ action: 'saveTransaction', data: realTrx })
+    ]).then(([resDel, resAdd]) => {
+      if (resAdd?.success && !resAdd.offline) {
         showToast('Transaksi pencairan berhasil disinkronkan!', 'success');
+        fetchFromGAS();
       }
     });
   } else {
@@ -2374,12 +2457,60 @@ async function cairkanSimulasi(id) {
   }
 }
 
-function hapusSimulasi(id) {
+async function hapusSimulasi(id) {
   state.simulations = (state.simulations || []).filter(t => t.id !== id);
   const envKey = STATE_CACHE_KEY + '_' + (state.env?.active || 'PROD');
   localStorage.setItem(envKey, JSON.stringify(state));
   updateUI();
-  showToast('Draf simulasi pengeluaran dihapus.', 'info');
+
+  if (gasUrl) {
+    showToast('Menghapus draf simulasi di server...', 'info');
+    const res = await postToGAS({ action: 'deleteTransaction', id });
+    if (res?.success && !res.offline) {
+      showToast('Draf simulasi pengeluaran dihapus dari server.', 'success');
+      fetchFromGAS();
+    }
+  } else {
+    showToast('Draf simulasi pengeluaran dihapus.', 'info');
+  }
+}
+
+function editSimulasi(id) {
+  const sims = state.simulations || [];
+  const t = sims.find(x => x.id === id);
+  if (!t) return;
+
+  editingSimId = id;
+
+  openModal('modal-transaksi', true);
+
+  const titleEl = document.getElementById('modal-transaksi-title');
+  if (titleEl) titleEl.textContent = 'Edit Simulasi Transaksi';
+
+  const typeEl = document.getElementById('trx-type');
+  if (typeEl) typeEl.value = t.type || 'pengeluaran';
+
+  populateDropdowns();
+
+  const dateEl = document.getElementById('trx-date');
+  if (dateEl) dateEl.value = t.date || '';
+
+  const catEl = document.getElementById('trx-category');
+  if (catEl) catEl.value = t.category || '';
+
+  const amountEl = document.getElementById('trx-amount');
+  if (amountEl) amountEl.value = t.amount || '';
+
+  const descEl = document.getElementById('trx-desc');
+  if (descEl) descEl.value = t.desc || '';
+
+  const pmEl = document.getElementById('trx-pay-method');
+  if (pmEl) pmEl.value = t.payMethod || 'Transfer';
+
+  const notesEl = document.getElementById('trx-notes');
+  if (notesEl) notesEl.value = t.notes || '';
+
+  updateModalBudgetInfo();
 }
 
 function updateModalBudgetInfo() {
@@ -2404,7 +2535,10 @@ function updateModalBudgetInfo() {
   }
 
   // Hitung sisa anggaran dengan logika yang sama seperti di saveTransaction
-  const activeTrx = getActiveTrx();
+  let activeTrx = getActiveTrx();
+  if (editingSimId) {
+    activeTrx = activeTrx.filter(t => t.id !== editingSimId);
+  }
   const isPerubahan = (state.settings?.APBDes || 'Awal') === 'Perubahan';
   const totalBudget = isPerubahan
     ? (state.sources || []).filter(s => matchCategory(category, s) && String(s.year || '') === getActiveYear()).reduce((sum, s) => sum + Number(s.initialBalance || 0), 0)

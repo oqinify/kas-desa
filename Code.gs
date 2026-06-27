@@ -120,6 +120,7 @@ function initDatabase() {
   const schemas = [
     { name: 'Transaksi', headers: ['ID','Tanggal','Tipe','Sumber Dana','Kategori','Deskripsi','Jumlah','Metode Bayar','Status','Catatan','User','Timestamp'] },
     { name: 'Transaksi_Non_APBDes', headers: ['ID','Tanggal','Tipe','Sumber Dana','Kategori','Deskripsi','Jumlah','Metode Bayar','Status','Catatan','User','Timestamp'] },
+    { name: 'Draf_Belanja', headers: ['ID','Tanggal','Tipe','Sumber Dana','Kategori','Deskripsi','Jumlah','Metode Bayar','Status','Catatan','User','Timestamp'] },
 
     { name: 'Silpa', headers: ['Sumber Dana','Nama','Saldo Awal','Keterangan','Status Aktif','Tahun'] },
 
@@ -215,11 +216,15 @@ function getAllData() {
     references = refSheet.getLastRow()>1 ? refSheet.getRange(2,1,refSheet.getLastRow()-1,1).getValues().flat() : [];
   }
 
+  const simSheet = ss.getSheetByName('Draf_Belanja');
+  const simulations = _readTransactionsFromSheet_(simSheet);
+
   return { 
     transactions, 
     sources, 
     settings,
     references,
+    simulations,
 
     config: CONFIG,
 
@@ -227,7 +232,7 @@ function getAllData() {
       active: getActiveEnv_(),
       name: ENVIRONMENTS[getActiveEnv_()]?.name || 'Default'
     },
-    dbStatus: (trxSheet && srcSheet && setSheet && refSheet) ? 'ready' : 'needs_init'
+    dbStatus: (trxSheet && srcSheet && setSheet && refSheet && simSheet) ? 'ready' : 'needs_init'
   };
 }
 
@@ -236,20 +241,36 @@ function getAllData() {
 // ─── TRANSACTION CRUD ──────────────────────────────────────────
 function saveTransactionToSheet(data) {
   const ss = getSpreadsheet_();
-  const isNon = String(data.category).toLowerCase().includes('non-apbdes') || String(data.category).toLowerCase().includes('non apbdes');
-  const sheetName = isNon ? 'Transaksi_Non_APBDes' : 'Transaksi';
+  let sheetName = 'Transaksi';
+  let prefix = 'TRX-';
+  let isNon = false;
+
+  if (data.status === 'simulation' || data.isSimulasi) {
+    sheetName = 'Draf_Belanja';
+    prefix = 'TRX-SIM-';
+  } else {
+    isNon = String(data.category).toLowerCase().includes('non-apbdes') || String(data.category).toLowerCase().includes('non apbdes');
+    if (isNon) {
+      sheetName = 'Transaksi_Non_APBDes';
+      prefix = 'TRXN-';
+    }
+  }
+
   const sheet = ss.getSheetByName(sheetName);
   
-  const id = (isNon ? 'TRXN-' : 'TRX-') + Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyyMMddHHmmss") + '-' + Math.floor(Math.random()*1000);
+  // Use passed id if it exists, or generate a new one
+  const id = data.id || (prefix + Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyyMMddHHmmss") + '-' + Math.floor(Math.random()*1000));
   
-  // Jika user admin, matikan approval (selalu approved)
-  let status = 'approved';
-  if (String(data.user).toLowerCase() !== 'admin') {
-     status = (data.type === 'pengeluaran' && data.amount >= CONFIG.BATAS_APPROVAL) ? 'pending' : 'approved';
+  let status = data.status || 'approved';
+  if (sheetName !== 'Draf_Belanja') {
+    status = 'approved';
+    if (String(data.user).toLowerCase() !== 'admin') {
+       status = (data.type === 'pengeluaran' && data.amount >= CONFIG.BATAS_APPROVAL) ? 'pending' : 'approved';
+    }
   }
   
   sheet.appendRow([id, data.date, data.type, data.category, data.subCategory||'', data.desc, data.amount, data.payMethod||'Transfer', status, data.notes||'', data.user||'web', new Date()]);
-  _logActivity(data.user||'web', 'CREATE', (isNon ? 'Transaksi Non-APBDes: ' : 'Transaksi APBDes: ')+id);
+  _logActivity(data.user||'web', 'CREATE', (sheetName === 'Draf_Belanja' ? 'Simulasi: ' : (isNon ? 'Transaksi Non-APBDes: ' : 'Transaksi APBDes: '))+id);
 
   return { success:true, id, status };
 }
@@ -286,6 +307,7 @@ function updateTransaction(id, data) {
   const ss = getSpreadsheet_();
   let ok = _updateTransactionInSheet_(ss, 'Transaksi', id, data);
   if (!ok) ok = _updateTransactionInSheet_(ss, 'Transaksi_Non_APBDes', id, data);
+  if (!ok) ok = _updateTransactionInSheet_(ss, 'Draf_Belanja', id, data);
   if (ok) return { success: true };
   return { success:false, message:'ID tidak ditemukan' };
 }
@@ -310,7 +332,7 @@ function _updateTransactionInSheet_(ss, sheetName, id, data) {
 
 function deleteTransaction(id) {
   const ss = getSpreadsheet_();
-  const sheets = ['Transaksi', 'Transaksi_Non_APBDes'];
+  const sheets = ['Transaksi', 'Transaksi_Non_APBDes', 'Draf_Belanja'];
   for (const name of sheets) {
     const sheet = ss.getSheetByName(name);
     if (!sheet) continue;
